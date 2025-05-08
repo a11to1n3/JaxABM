@@ -5,6 +5,10 @@ import unittest
 import jax
 import jax.numpy as jnp
 from typing import Dict, Any
+import importlib.util
+
+# Check if matplotlib is available
+matplotlib_available = importlib.util.find_spec("matplotlib") is not None
 
 from jaxabm.analysis import SensitivityAnalysis, ModelCalibrator
 from jaxabm.model import Model
@@ -221,7 +225,7 @@ class TestSensitivityAnalysis(unittest.TestCase):
         with self.assertRaises(ValueError):
             sa.sobol_indices()
     
-    @unittest.skip("Plotting test requires matplotlib")
+    @unittest.skipIf(not matplotlib_available, "Matplotlib not available")
     def test_plot_indices(self):
         """Test plotting sensitivity indices."""
         # Run first
@@ -345,7 +349,7 @@ class TestModelCalibrator(unittest.TestCase):
         self.assertEqual(len(history['loss']), 3)
         self.assertEqual(len(history['params']), 4)
     
-    @unittest.skip("Plotting test requires matplotlib")
+    @unittest.skipIf(not matplotlib_available, "Matplotlib not available")
     def test_plot_calibration(self):
         """Test plotting calibration results."""
         # Run calibration first
