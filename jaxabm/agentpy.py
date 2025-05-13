@@ -1082,38 +1082,24 @@ class Parameter:
         self.bounds = bounds
         self.distribution = distribution
     
-    def sample(self, n: int = 1, key: Optional[jax.Array] = None) -> np.ndarray:
+    def sample(self, n: int = 1) -> np.ndarray:
         """Sample parameter values.
         
         Args:
             n: Number of samples.
-            key: JAX random key.
             
         Returns:
             Array of sampled values.
         """
-        if key is None:
-            # Use numpy for simple random sampling without key
-            if self.distribution == 'uniform':
-                return np.random.uniform(self.bounds[0], self.bounds[1], size=n)
-            elif self.distribution == 'normal':
-                mean = (self.bounds[0] + self.bounds[1]) / 2
-                std = (self.bounds[1] - self.bounds[0]) / 4  # Approximate
-                return np.random.normal(mean, std, size=n)
-            else:
-                raise ValueError(f"Unknown distribution: {self.distribution}")
+        # Use numpy for simple random sampling
+        if self.distribution == 'uniform':
+            return np.random.uniform(self.bounds[0], self.bounds[1], size=n)
+        elif self.distribution == 'normal':
+            mean = (self.bounds[0] + self.bounds[1]) / 2
+            std = (self.bounds[1] - self.bounds[0]) / 4  # Approximate
+            return np.random.normal(mean, std, size=n)
         else:
-            # Use JAX for random sampling with key
-            if self.distribution == 'uniform':
-                return jax.random.uniform(
-                    key, shape=(n,), minval=self.bounds[0], maxval=self.bounds[1]
-                )
-            elif self.distribution == 'normal':
-                mean = (self.bounds[0] + self.bounds[1]) / 2
-                std = (self.bounds[1] - self.bounds[0]) / 4  # Approximate
-                return jax.random.normal(key, shape=(n,)) * std + mean
-            else:
-                raise ValueError(f"Unknown distribution: {self.distribution}")
+            raise ValueError(f"Unknown distribution: {self.distribution}")
 
 
 class Sample:
