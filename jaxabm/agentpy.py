@@ -868,20 +868,19 @@ class Model:
         Returns:
             Updated environment state.
         """
-        # If step has been overridden, we need to update the model state dynamically
-        if self._dynamic_state_update:
-            # Store current state for access in step
-            self._current_env_state = env_state
-            self._current_agent_states = agent_states
-            
-            # Call user-defined step function
-            self.step()
-            
-            # Return updated environment state
-            return self.env.state
+        # Store the current state for access in step
+        self._current_env_state = env_state.copy()
+        self._current_agent_states = agent_states
         
-        # Otherwise, just return the current environment state
-        return env_state
+        # Call user-defined step function
+        self.step()
+        
+        # Create new environment state from current + local env state
+        new_env_state = {**env_state}
+        for name, value in self.env.state.items():
+            new_env_state[name] = value
+            
+        return new_env_state
     
     def compute_metrics(self, env_state: Dict[str, Any], agent_states: Dict[str, Dict[str, Any]],
                        model_params: Dict[str, Any]) -> Dict[str, Any]:
