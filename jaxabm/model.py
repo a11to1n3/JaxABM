@@ -72,22 +72,30 @@ class Model:
         
         self._agent_collections[name] = agent_collection
     
-    def add_env_state(self, name: str, initial_value: Any) -> None:
-        """Add an environmental state variable to the model.
+    def add_env_state(self, name: str, value: Any) -> None:
+        """Add a state variable to the model environment.
         
         Args:
-            name: Name of the state variable
-            initial_value: Initial value for the state variable
+            name: Name of the state variable.
+            value: Value of the state variable.
         """
         # Update the state if model is initialized
         if self._is_initialized:
-            # Just update the env state directly
-            self._env_state[name] = initial_value
+            # Just update the state
+            if self._state is not None:
+                if 'env' not in self._state:
+                    self._state['env'] = {}
+                self._state['env'][name] = value
+            
+            # Also update the env_state dictionary
+            if self._env_state is None:
+                self._env_state = {}
+            self._env_state[name] = value
         else:
             # Initial state setup
             if self._env_state is None:
                 self._env_state = {}
-            self._env_state[name] = initial_value
+            self._env_state[name] = value
     
     def model_state(self) -> Dict[str, Any]:
         """Get the current model state.
