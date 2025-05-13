@@ -959,6 +959,15 @@ class Model:
         self._agent_lists[name] = agent_list
         agent_list.name = name
         
+        # Create and store actual agent instances for custom method access
+        self._agent_instances[name] = []
+        for i in range(n):
+            agent = agent_class()
+            agent.id = i
+            agent.model = self
+            agent.p = kwargs
+            self._agent_instances[name].append(agent)
+        
         return agent_list
     
     def record(self, name: str, value: Any) -> None:
