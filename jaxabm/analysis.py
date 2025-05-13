@@ -194,6 +194,50 @@ class SensitivityAnalysis:
             indices[metric] = metric_indices
         
         return indices
+
+    def plot(self, metric=None, ax=None, **kwargs):
+        """Plot sensitivity analysis results.
+        
+        Args:
+            metric: Metric to plot. If None, plot sobol indices for all metrics.
+            ax: Matplotlib axis to use for plotting.
+            **kwargs: Additional keyword arguments to pass to plotting function.
+            
+        Returns:
+            Matplotlib axis.
+        """
+        if ax is None:
+            import matplotlib.pyplot as plt
+            fig, ax = plt.subplots()
+        
+        # Get sobol indices
+        indices = self.sobol_indices()
+        
+        # Choose metric to plot
+        if metric is None and self.metrics_of_interest:
+            metric = self.metrics_of_interest[0]
+        
+        if metric in indices:
+            # Get indices for this metric
+            metric_indices = indices[metric]
+            
+            # Sort indices by value
+            sorted_indices = sorted(metric_indices.items(), key=lambda x: x[1], reverse=True)
+            
+            # Plot bar chart
+            params = [p for p, _ in sorted_indices]
+            values = [v for _, v in sorted_indices]
+            ax.bar(params, values, **kwargs)
+            ax.set_xlabel('Parameter')
+            ax.set_ylabel('Sensitivity Index')
+            ax.set_title(f'Sensitivity Indices for {metric}')
+            
+            # Rotate x-labels if there are many parameters
+            if len(params) > 3:
+                import matplotlib.pyplot as plt
+                plt.setp(ax.get_xticklabels(), rotation=45, ha='right')
+        
+        return ax
     
     def plot_indices(self, figsize: Tuple[int, int] = (10, 6)) -> Any:
         """Plot the sensitivity indices.
