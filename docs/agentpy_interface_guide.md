@@ -12,6 +12,7 @@ The new interface provides a more intuitive, object-oriented approach to buildin
 - `Grid` and `Network` for spatial structures
 - `Model` class with `setup`, `step`, and `run` methods
 - `Results` class for analyzing and visualizing results
+- `Parameter`, `SensitivityAnalyzer`, and `ModelCalibrator` for parameter analysis and optimization
 
 ## How to Use
 
@@ -96,6 +97,64 @@ results.plot()
 results.variables.agent.x.plot()
 ```
 
+### Sensitivity Analysis
+
+Perform sensitivity analysis to understand how parameters affect model outcomes:
+
+```python
+# Define parameters
+growth_rate = jx.Parameter('growth_rate', bounds=(0.01, 0.1))
+initial_pop = jx.Parameter('initial_population', bounds=(10, 100))
+
+# Create analyzer
+analyzer = jx.SensitivityAnalyzer(
+    model_class=MyModel,
+    parameters=[growth_rate, initial_pop],
+    n_samples=10,
+    metrics=['population', 'resources']
+)
+
+# Run analysis
+results = analyzer.run()
+
+# Calculate sensitivity
+sensitivity = analyzer.calculate_sensitivity()
+
+# Plot sensitivity
+analyzer.plot('population')
+```
+
+### Model Calibration
+
+Calibrate model parameters to match target metrics:
+
+```python
+# Define parameters
+growth_rate = jx.Parameter('growth_rate', bounds=(0.01, 0.1))
+initial_pop = jx.Parameter('initial_population', bounds=(10, 100))
+
+# Define target metrics
+target_metrics = {
+    'population': 50,
+    'resources': 200
+}
+
+# Create calibrator
+calibrator = jx.ModelCalibrator(
+    model_class=MyModel,
+    parameters=[growth_rate, initial_pop],
+    target_metrics=target_metrics,
+    metrics_weights={'population': 1.0, 'resources': 0.5},
+    max_iterations=20
+)
+
+# Run calibration
+optimal_params = calibrator.run()
+
+# Plot calibration progress
+calibrator.plot_progress()
+```
+
 ## Examples
 
 The framework includes several examples demonstrating the AgentPy-like interface:
@@ -104,6 +163,7 @@ The framework includes several examples demonstrating the AgentPy-like interface
 - `examples/random_walk.py`: A more complex model with random walking agents
 - `examples/schelling_model.py`: Classic Schelling segregation model
 - `examples/minimal_example_agentpy.py`: AgentPy-like version of the minimal example
+- `examples/sensitivity_calibration_example.py`: Example of sensitivity analysis and model calibration
 
 ## Key Differences from AgentPy
 
@@ -127,6 +187,8 @@ If you're using the original JaxABM API, here's how to migrate:
 | `model.add_agent_collection()` | `model.add_agents()` |
 | Custom update function | `Model.step()` method |
 | Custom metrics function | `Model.compute_metrics()` method |
+| `SensitivityAnalysis` | `SensitivityAnalyzer` |
+| `ModelCalibrator` | `ModelCalibrator` |
 
 ## Performance Considerations
 
