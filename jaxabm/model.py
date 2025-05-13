@@ -79,10 +79,18 @@ class Model:
             name: Name of the state variable
             initial_value: Initial value for the state variable
         """
+        # Update the state if model is initialized
         if self._is_initialized:
-            raise RuntimeError("Cannot add environmental state after model is initialized")
-        
-        self._env_state[name] = initial_value
+            # Just update the state
+            if self._state is not None and 'env' in self._state:
+                env_state = self._state['env']
+                env_state = {**env_state, name: initial_value}
+                self._state['env'] = env_state
+        else:
+            # Initial state setup
+            if self._env_state is None:
+                self._env_state = {}
+            self._env_state[name] = initial_value
     
     def model_state(self) -> Dict[str, Any]:
         """Get the current model state.
