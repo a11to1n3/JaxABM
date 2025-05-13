@@ -137,10 +137,16 @@ class SensitivityAnalysis:
             if verbose:
                 print("Results:")
                 
+            # Handle both dictionary and Results objects
+            if hasattr(results, '_data'):
+                results_dict = results._data
+            else:
+                results_dict = results
+                
             for metric in self.metrics_of_interest:
-                if metric in results and results[metric]:
+                if metric in results_dict and results_dict[metric]:
                     # Store the final value of the metric
-                    value = results[metric][-1]
+                    value = results_dict[metric][-1]
                     metrics_results[metric] = metrics_results[metric].at[i].set(value)
                     if verbose:
                         print(f"  {metric}: {float(value):.4f}")
