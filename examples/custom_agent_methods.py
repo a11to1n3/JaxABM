@@ -7,6 +7,7 @@ outside of the step function during simulation.
 
 import jaxabm as jx
 import numpy as np
+import jax.numpy as jnp
 import matplotlib.pyplot as plt
 
 
