@@ -50,15 +50,7 @@ class SimpleModel(jx.Model):
         self.env.add_state('time', 0)
         self.env.add_state('carrying_capacity', carrying_capacity)
         self.env.add_state('mean_size', 1.0)
-        
-        # Set agent growth rates - initialize states differently
-        model_params = self.p
-        if hasattr(self.agents, 'collection'):
-            growth_rate_array = np.ones(n_agents) * growth_rate
-            # Add states manually
-            if not hasattr(self.agents.collection, '_states'):
-                self.agents.collection._states = {}
-            self.agents.collection._states['growth_rate'] = growth_rate_array
+        self.env.add_state('growth_rate', growth_rate)  # Store growth rate in environment
     
     def step(self):
         """Update model state."""
