@@ -1085,6 +1085,9 @@ class Model:
         # Call end method
         self.end()
         
+        # Mark model as not running
+        self._running = False
+        
         # Prepare results
         results_dict.update(self._recorded_data)
         
