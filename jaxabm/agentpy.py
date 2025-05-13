@@ -1045,6 +1045,9 @@ class Model:
         if steps is not None:
             self.steps = steps
         
+        # Mark model as running
+        self._running = True
+        
         # Create model config
         config = ModelConfig(
             steps=self.steps,
