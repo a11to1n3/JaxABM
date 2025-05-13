@@ -170,6 +170,7 @@ The framework includes several examples demonstrating the AgentPy-like interface
 - `examples/schelling_model.py`: Classic Schelling segregation model
 - `examples/minimal_example_agentpy.py`: AgentPy-like version of the minimal example
 - `examples/sensitivity_calibration_example.py`: Example of sensitivity analysis and model calibration
+- `examples/custom_agent_methods.py`: Demonstration of custom agent methods
 
 ## Key Differences from AgentPy
 
@@ -179,6 +180,15 @@ While the interface is similar to AgentPy, there are some differences to be awar
 2. JAX's constraints on mutation and randomness apply
 3. Environment state is updated using `env.add_state(name, value)` instead of direct attribute assignment
 4. The performance benefits come from JAX, which requires functional programming patterns
+
+## Advanced Features
+
+For advanced usage, JaxABM provides several additional features:
+
+1. **Custom Agent Methods**: Agents can have custom methods that can be called outside of the step function (see `docs/advanced_agent_features.md`)
+2. **Sensitivity Analysis**: Analyze how model outputs respond to parameter changes
+3. **Model Calibration**: Optimize model parameters to match target metrics
+4. **Spatial Structures**: Grid and Network environments for spatial agent-based models
 
 ## Migrating from Original JaxABM API
 
