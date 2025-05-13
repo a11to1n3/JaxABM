@@ -35,8 +35,9 @@ class CustomAgent(jx.Agent):
         x = (x + 0.01) % 1.0
         y = (y + 0.01) % 1.0
         
-        # Decrease energy
-        energy = max(0.0, energy - 1.0)
+        # Decrease energy (using JAX-compatible operations)
+        energy = energy - 1.0
+        energy = jnp.maximum(0.0, energy)  # JAX-compatible version of max
         
         # Return updated state
         return {
