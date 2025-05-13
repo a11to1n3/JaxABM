@@ -1210,8 +1210,7 @@ class SensitivityAnalyzer:
     """
     
     def __init__(self, model_class: Type[Model], parameters: List[Parameter],
-                n_samples: int = 10, metrics: List[str] = None,
-                seed: Optional[int] = None):
+                n_samples: int = 10, metrics: List[str] = None):
         """Initialize sensitivity analyzer.
         
         Args:
@@ -1219,16 +1218,14 @@ class SensitivityAnalyzer:
             parameters: List of parameters to vary.
             n_samples: Number of samples per parameter.
             metrics: List of metrics to analyze.
-            seed: Random seed.
         """
         self.model_class = model_class
         self.parameters = parameters
         self.n_samples = n_samples
         self.metrics = metrics or []
-        self.seed = seed if seed is not None else 0
         
         # Create sample
-        self.sample = Sample(parameters, n_samples, seed)
+        self.sample = Sample(parameters, n_samples)
         
         # Import actual sensitivity analysis
         from .analysis import SensitivityAnalysis
@@ -1249,8 +1246,7 @@ class SensitivityAnalyzer:
             model_factory=model_factory,
             param_ranges=param_ranges,
             metrics_of_interest=metrics,
-            num_samples=n_samples,
-            seed=seed
+            num_samples=n_samples
         )
     
     def run(self) -> Dict[str, Any]:
