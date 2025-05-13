@@ -203,8 +203,7 @@ def run_sensitivity_analysis():
         model_class=PredatorPreyModel,
         parameters=[prey_energy_gain, predator_energy_loss, predator_energy_gain],
         n_samples=5,  # Small number for quick example
-        metrics=['prey_count', 'predator_count', 'prey_predator_ratio'],
-        seed=42
+        metrics=['prey_count', 'predator_count', 'prey_predator_ratio']
     )
     
     # Run analysis
