@@ -1259,7 +1259,12 @@ class SensitivityAnalyzer:
         Returns:
             Dictionary of results.
         """
-        return self.analysis.run()
+        results_obj = self.analysis.run()
+        
+        # Convert Results object to dictionary if needed
+        if hasattr(results_obj, '_data'):
+            return results_obj._data
+        return results_obj
     
     def calculate_sensitivity(self, method: str = 'sobol') -> Dict[str, Any]:
         """Calculate sensitivity indices.
