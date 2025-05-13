@@ -42,6 +42,7 @@ class Agent:
     
     This class provides an AgentPy-like interface for creating agents. To create
     a custom agent, inherit from this class and override the setup and step methods.
+    You can also add custom methods to define additional agent behaviors.
     
     Example:
         ```python
@@ -52,13 +53,17 @@ class Agent:
                     'y': 0
                 }
                 
-            def step(self, model):
-                x = self.x + 0.1
-                y = self.y + 0.1
+            def step(self, model_state):
+                # Update agent state
                 return {
-                    'x': x,
-                    'y': y
+                    'x': self._state['x'] + 0.1,
+                    'y': self._state['y'] + 0.1
                 }
+                
+            def custom_action(self, param):
+                # Custom behavior outside of the step function
+                self._state['x'] = param
+                return self._state['x']
         ```
     """
     
@@ -91,6 +96,23 @@ class Agent:
             A dictionary containing the updated agent state.
         """
         return self._state
+    
+    def update_state(self, new_state: Dict[str, Any]) -> None:
+        """Update agent state.
+        
+        This method allows updating the agent's state from custom methods.
+        It's used to ensure state changes from custom methods are properly
+        reflected in the underlying model.
+        
+        Args:
+            new_state: New state dictionary to merge with current state.
+        """
+        if self.model and hasattr(self.model, '_update_agent_state'):
+            # If connected to a model, use the model's update mechanism
+            self.model._update_agent_state(self, new_state)
+        else:
+            # Otherwise, just update the local state
+            self._state.update(new_state)
     
     def __getattr__(self, name: str) -> Any:
         """Get agent attribute from state.
@@ -126,7 +148,10 @@ class Agent:
         else:
             if not hasattr(self, '_state'):
                 super().__setattr__('_state', {})
-            self._state[name] = value
+            
+            # Update state
+            new_state = {name: value}
+            self.update_state(new_state)
 
 
 class AgentWrapper(AgentType):
