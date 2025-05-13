@@ -1136,27 +1136,22 @@ class Sample:
         ```
     """
     
-    def __init__(self, parameters: List[Parameter], n_samples: int = 10, 
-                 seed: Optional[int] = None):
+    def __init__(self, parameters: List[Parameter], n_samples: int = 10):
         """Initialize sample.
         
         Args:
             parameters: List of parameters.
             n_samples: Number of samples per parameter.
-            seed: Random seed.
         """
         self.parameters = parameters
         self.n_samples = n_samples
-        self.seed = seed if seed is not None else 0
         
         # Sample parameter values
         self._samples = {}
-        key = jax.random.PRNGKey(self.seed)
+        # Use numpy for random sampling
         
-        for i, param in enumerate(parameters):
-            # Split key for each parameter
-            key, subkey = jax.random.split(key)
-            self._samples[param.name] = param.sample(n_samples, subkey)
+        for param in parameters:
+            self._samples[param.name] = param.sample(n_samples)
     
     def __getitem__(self, index: int) -> Dict[str, float]:
         """Get parameter set at index.
