@@ -855,7 +855,14 @@ class Model:
         self._jax_model = None
         
         # Initialize state
-        self._dynamic_state_update = False
+        self._current_env_state = {}
+        self._current_agent_states = {}
+        
+        # Track if we're currently in a run
+        self._running = False
+        
+        # Store actual agent instances for custom method access
+        self._agent_instances = {}
     
     def setup(self) -> None:
         """Set up model.
