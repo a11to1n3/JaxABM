@@ -1326,7 +1326,7 @@ class ModelCalibrator:
     def __init__(self, model_class: Type[Model], parameters: List[Parameter],
                 target_metrics: Dict[str, float], metrics_weights: Dict[str, float] = None,
                 learning_rate: float = 0.01, max_iterations: int = 20,
-                method: str = 'gradient', seed: Optional[int] = None):
+                method: str = 'gradient'):
         """Initialize model calibrator.
         
         Args:
@@ -1337,7 +1337,6 @@ class ModelCalibrator:
             learning_rate: Learning rate for optimization.
             max_iterations: Maximum number of iterations.
             method: Optimization method ('gradient' or 'rl').
-            seed: Random seed.
         """
         self.model_class = model_class
         self.parameters = parameters
@@ -1346,7 +1345,6 @@ class ModelCalibrator:
         self.learning_rate = learning_rate
         self.max_iterations = max_iterations
         self.method = method
-        self.seed = seed if seed is not None else 0
         
         # Import actual model calibrator
         from .analysis import ModelCalibrator as JaxModelCalibrator
@@ -1371,8 +1369,7 @@ class ModelCalibrator:
             metrics_weights=metrics_weights,
             learning_rate=learning_rate,
             max_iterations=max_iterations,
-            method=method,
-            seed=seed
+            method=method
         )
     
     def run(self) -> Dict[str, float]:
