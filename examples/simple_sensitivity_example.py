@@ -21,7 +21,10 @@ class SimpleGrowthAgent(jx.Agent):
         """Grow by growth rate."""
         # Get current state
         size = self._state['size']
-        growth_rate = self._state.get('growth_rate', 0.1)
+        
+        # Get growth rate from environment
+        env_state = model_state.get('env', {})
+        growth_rate = env_state.get('growth_rate', 0.1)
         
         # Compute new size
         new_size = size * (1.0 + growth_rate)
