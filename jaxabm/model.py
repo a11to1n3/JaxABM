@@ -8,11 +8,11 @@ for building JAX-accelerated agent-based models.
 import jax
 import jax.numpy as jnp
 import time
-from typing import Dict, Any, List, Callable, Optional, Tuple
+from typing import Dict, List, Any, Callable, Optional, Tuple, Union
 
-# Import AgentCollection from .agent and ModelConfig from .core
-from .agent import AgentCollection 
 from .core import ModelConfig
+from .agent import AgentCollection
+from .utils import convert_to_numpy, format_time
 
 
 class Model:
