@@ -48,6 +48,7 @@ class Model:
         # Initialize collections, state, and parameters
         self._agent_collections: Dict[str, AgentCollection] = {}
         self._env_state: Dict[str, Any] = {}
+        self._state: Optional[Dict[str, Any]] = None
         self._params = params or {}
         self._update_state_fn = update_state_fn
         self._metrics_fn = metrics_fn
