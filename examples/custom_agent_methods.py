@@ -42,17 +42,20 @@ class CustomAgent(jx.Agent):
             'x': x,
             'y': y,
             'energy': energy,
-            'color': self._state['color'],
+            'color_index': self._state['color_index'],
             'custom_actions': self._state['custom_actions']
         }
     
-    def change_color(self, new_color):
-        """Custom method to change agent color.
+    def change_color(self, color_index):
+        """Custom method to change agent color index.
         
         This can be called outside of the step function.
+        
+        Args:
+            color_index: Numeric index representing a color (0=blue, 1=red, etc.)
         """
         # Update agent's color
-        self.color = new_color  # This calls update_state via __setattr__
+        self.color_index = color_index  # This calls update_state via __setattr__
         
         # Increment custom action counter
         new_state = {
@@ -60,7 +63,7 @@ class CustomAgent(jx.Agent):
         }
         self.update_state(new_state)
         
-        return self.color
+        return self.color_index
     
     def boost_energy(self, amount=10.0):
         """Custom method to give the agent an energy boost.
