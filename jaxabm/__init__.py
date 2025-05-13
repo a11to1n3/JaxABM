@@ -130,8 +130,15 @@ if has_jax():
             Grid,
             Network,
             Model, 
-            Results
+            Results,
+            Parameter,
+            Sample,
+            SensitivityAnalyzer,
+            ModelCalibrator as AgentPyModelCalibrator
         )
+        
+        # Rename to avoid conflict
+        ModelCalibrator = AgentPyModelCalibrator
         
         # Set flag
         HAS_JAX_LOADED = True
