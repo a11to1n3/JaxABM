@@ -191,7 +191,7 @@ def run_custom_agent_example():
     print(f"Total custom actions: {results._data['custom_actions'][-1]}")
     
     # Plot results
-    fig, axes = plt.subplots(2, 1, figsize=(10, 8))
+    fig, axes = plt.subplots(3, 1, figsize=(10, 12))
     
     # Plot total energy over time
     axes[0].plot(results._data['time'], results._data['total_energy'], 'b-')
@@ -207,6 +207,41 @@ def run_custom_agent_example():
         axes[1].set_ylabel('Custom Actions')
         axes[1].set_title('Cumulative Custom Actions Over Time')
         axes[1].grid(True)
+    
+    # Plot color changes over time
+    if hasattr(results, '_data') and 'agents.agents.color_index' in results._data:
+        # Get color indices over time (first agent only for simplicity)
+        color_indices = [indices[0] for indices in results._data['agents.agents.color_index']]
+        
+        # Map color indices to actual color names for plotting
+        color_names = ['blue', 'red', 'green', 'yellow', 'purple']
+        # Create a colormap for visualization
+        cmap = plt.cm.get_cmap('viridis', 5)
+        
+        # Plot color changes as a heatmap
+        axes[2].scatter(
+            results._data['time'], 
+            [1] * len(results._data['time']),
+            c=color_indices,
+            cmap=cmap,
+            s=100,
+            marker='s'
+        )
+        
+        axes[2].set_xlabel('Time')
+        axes[2].set_yticks([])
+        axes[2].set_title('Agent Color Changes Over Time (First Agent)')
+        
+        # Add colorbar
+        cbar = plt.colorbar(
+            plt.cm.ScalarMappable(
+                cmap=cmap, 
+                norm=plt.Normalize(vmin=0, vmax=4)
+            ),
+            ax=axes[2]
+        )
+        cbar.set_ticks([0.4, 1.2, 2.0, 2.8, 3.6])
+        cbar.set_ticklabels(color_names)
     
     plt.tight_layout()
     plt.savefig('custom_agent_results.png')
