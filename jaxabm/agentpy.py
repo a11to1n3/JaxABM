@@ -347,14 +347,19 @@ class AgentList:
     def __iter__(self):
         """Allow iteration over agents.
         
-        This is a convenience method that creates Agent instances on-the-fly
-        with the appropriate state. For large agent counts, this is inefficient
-        and should be avoided in favor of vectorized operations.
+        This returns the actual agent instances stored in the model,
+        allowing access to custom methods.
         
         Yields:
             Agent instances with appropriate state.
         """
-        # Get all states
+        # If we have access to the model's stored agent instances, use those
+        if self.model and hasattr(self.model, '_agent_instances'):
+            if self.name in self.model._agent_instances:
+                yield from self.model._agent_instances[self.name]
+                return
+        
+        # Fallback: Create agent instances on-the-fly (less efficient)
         states = self.states
         if not states:
             return
