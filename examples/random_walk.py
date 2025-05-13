@@ -102,7 +102,7 @@ class RandomWalkModel(jx.Model):
     def record_data(self):
         """Record data for analysis."""
         # Only record if the JAX model is initialized
-        if not hasattr(self, '_jax_model') or not hasattr(self._jax_model, 'state'):
+        if not hasattr(self, '_jax_model') or not self._jax_model.state:
             return
         
         # Get agent states
