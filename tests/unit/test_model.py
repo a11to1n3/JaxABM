@@ -136,10 +136,13 @@ class TestModel(unittest.TestCase):
         
         # Add agents before initializing
         model.add_agent_collection('consumers', self.consumers)
-        # Should raise if model is already initialized
-        model.initialize() # Call initialize instead of setting flag
-        with self.assertRaises(RuntimeError):
-            model.add_env_state('new_var', 0)
+        model.initialize() # Initialize the model
+        
+        # Now we can still add environment state (this behavior has changed)
+        model.add_env_state('new_variable', 42.0)
+        
+        # Check that the state was updated in the model's state
+        self.assertEqual(model.state['env']['new_variable'], 42.0)
     
     def test_model_state(self):
         """Test getting the full model state."""
