@@ -81,11 +81,8 @@ class Model:
         """
         # Update the state if model is initialized
         if self._is_initialized:
-            # Just update the state
-            if self._state is not None and 'env' in self._state:
-                env_state = self._state['env']
-                env_state = {**env_state, name: initial_value}
-                self._state['env'] = env_state
+            # Just update the env state directly
+            self._env_state[name] = initial_value
         else:
             # Initial state setup
             if self._env_state is None:
