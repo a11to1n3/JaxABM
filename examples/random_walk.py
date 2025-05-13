@@ -56,10 +56,9 @@ class RandomWalker(jx.Agent):
         # Update position (ensure within bounds)
         new_position = jnp.clip(new_position, bounds[0], bounds[1])
         
-        # Change color if bouncing
-        new_color = color
-        if x_bounce | y_bounce:
-            new_color = 1 - color  # Toggle between 0 and 1
+        # Change color if bouncing (JAX-compatible way)
+        any_bounce = jnp.logical_or(x_bounce, y_bounce)
+        new_color = jnp.where(any_bounce, 1 - color, color)  # Toggle between 0 and 1
         
         # Return updated state
         return {
