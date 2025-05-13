@@ -100,6 +100,9 @@ Grid = None
 Network = None
 Model = None
 Results = None
+Parameter = None
+Sample = None
+SensitivityAnalyzer = None
 # Original JaxABM components
 AgentType = None
 AgentCollection = None
