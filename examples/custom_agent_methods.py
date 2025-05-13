@@ -123,17 +123,19 @@ class CustomModel(jx.Model):
         
         # Every color_change_frequency steps, change all agents' colors
         if current_time > 0 and current_time % self.env.color_change_frequency == 0:
-            colors = ['red', 'green', 'blue', 'yellow', 'purple']
-            new_color = colors[current_time % len(colors)]
+            # Use numeric color indices for JAX compatibility
+            # 0=blue, 1=red, 2=green, 3=yellow, 4=purple
+            new_color_index = int(current_time / self.env.color_change_frequency) % 5
+            color_names = ['blue', 'red', 'green', 'yellow', 'purple']
             
             # Change all agents' colors
             for i in range(len(self.agents)):
                 agent = self.get_agent('agents', i)
                 if agent:
                     # Call custom method
-                    agent.change_color(new_color)
+                    agent.change_color(new_color_index)
             
-            print(f"Step {current_time}: Changed all agents' colors to {new_color}")
+            print(f"Step {current_time}: Changed all agents' colors to {color_names[new_color_index]} (index {new_color_index})")
         
         # Calculate total energy and record it
         if hasattr(self, '_jax_model') and self._jax_model.state:
