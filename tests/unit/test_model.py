@@ -285,7 +285,7 @@ class TestModel(unittest.TestCase):
         """Test the state property."""
         model = Model(config=self.config)
         model.add_env_state('price_level', 1.0)
-        self.assertEqual(model.state, {'price_level': 1.0})
+        self.assertEqual(model.state, {'env': {'price_level': 1.0}})
 
 
 if __name__ == '__main__':
