@@ -19,7 +19,7 @@ class CustomAgent(jx.Agent):
             'x': 0.5,
             'y': 0.5,
             'energy': 100.0,
-            'color': 'blue',
+            'color_index': 0,  # 0=blue, 1=red, 2=green, etc. (using numeric values for JAX compatibility)
             'custom_actions': 0
         }
     
