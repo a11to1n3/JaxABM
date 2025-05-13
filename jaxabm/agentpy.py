@@ -1048,4 +1048,355 @@ class Model:
 
 
 # Make classes available at the module level
-__all__ = ['Agent', 'AgentList', 'Environment', 'Grid', 'Network', 'Model', 'Results']
+__all__ = ['Agent', 'AgentList', 'Environment', 'Grid', 'Network', 'Model', 'Results',
+           'Parameter', 'Sample', 'SensitivityAnalyzer', 'ModelCalibrator']
+
+
+class Parameter:
+    """Parameter for sensitivity analysis and model calibration.
+    
+    This class defines a parameter with a range of possible values,
+    which can be used for sensitivity analysis or parameter calibration.
+    
+    Example:
+        ```python
+        # Create a parameter for sensitivity analysis
+        p1 = Parameter('growth_rate', bounds=(0.01, 0.1))
+        
+        # Create a parameter with a distribution
+        p2 = Parameter('initial_population', bounds=(10, 1000), 
+                      distribution='uniform')
+        ```
+    """
+    
+    def __init__(self, name: str, bounds: Tuple[float, float], 
+                 distribution: str = 'uniform'):
+        """Initialize parameter.
+        
+        Args:
+            name: Parameter name.
+            bounds: Parameter bounds (min, max).
+            distribution: Distribution for sampling ('uniform', 'normal', etc.).
+        """
+        self.name = name
+        self.bounds = bounds
+        self.distribution = distribution
+    
+    def sample(self, n: int = 1, key: Optional[jax.Array] = None) -> np.ndarray:
+        """Sample parameter values.
+        
+        Args:
+            n: Number of samples.
+            key: JAX random key.
+            
+        Returns:
+            Array of sampled values.
+        """
+        if key is None:
+            # Use numpy for simple random sampling without key
+            if self.distribution == 'uniform':
+                return np.random.uniform(self.bounds[0], self.bounds[1], size=n)
+            elif self.distribution == 'normal':
+                mean = (self.bounds[0] + self.bounds[1]) / 2
+                std = (self.bounds[1] - self.bounds[0]) / 4  # Approximate
+                return np.random.normal(mean, std, size=n)
+            else:
+                raise ValueError(f"Unknown distribution: {self.distribution}")
+        else:
+            # Use JAX for random sampling with key
+            if self.distribution == 'uniform':
+                return jax.random.uniform(
+                    key, shape=(n,), minval=self.bounds[0], maxval=self.bounds[1]
+                )
+            elif self.distribution == 'normal':
+                mean = (self.bounds[0] + self.bounds[1]) / 2
+                std = (self.bounds[1] - self.bounds[0]) / 4  # Approximate
+                return jax.random.normal(key, shape=(n,)) * std + mean
+            else:
+                raise ValueError(f"Unknown distribution: {self.distribution}")
+
+
+class Sample:
+    """Container for parameter samples.
+    
+    This class stores parameter samples for batch runs or
+    sensitivity analysis.
+    
+    Example:
+        ```python
+        # Create parameters
+        p1 = Parameter('growth_rate', (0.01, 0.1))
+        p2 = Parameter('initial_population', (10, 1000))
+        
+        # Create sample
+        sample = Sample([p1, p2], n_samples=10)
+        
+        # Run model with sample
+        results = analyzer.run(sample)
+        ```
+    """
+    
+    def __init__(self, parameters: List[Parameter], n_samples: int = 10, 
+                 seed: Optional[int] = None):
+        """Initialize sample.
+        
+        Args:
+            parameters: List of parameters.
+            n_samples: Number of samples per parameter.
+            seed: Random seed.
+        """
+        self.parameters = parameters
+        self.n_samples = n_samples
+        self.seed = seed if seed is not None else 0
+        
+        # Sample parameter values
+        self._samples = {}
+        key = jax.random.PRNGKey(self.seed)
+        
+        for i, param in enumerate(parameters):
+            # Split key for each parameter
+            key, subkey = jax.random.split(key)
+            self._samples[param.name] = param.sample(n_samples, subkey)
+    
+    def __getitem__(self, index: int) -> Dict[str, float]:
+        """Get parameter set at index.
+        
+        Args:
+            index: Sample index.
+            
+        Returns:
+            Dictionary of parameter values.
+        """
+        params = {}
+        for param in self.parameters:
+            params[param.name] = self._samples[param.name][index]
+        return params
+    
+    def __len__(self) -> int:
+        """Get number of samples.
+        
+        Returns:
+            Number of samples.
+        """
+        return self.n_samples
+
+
+class SensitivityAnalyzer:
+    """Wrapper for sensitivity analysis with AgentPy-like interface.
+    
+    This class provides a more user-friendly interface for sensitivity
+    analysis with JaxABM.
+    
+    Example:
+        ```python
+        # Create parameters
+        p1 = Parameter('growth_rate', (0.01, 0.1))
+        p2 = Parameter('initial_population', (10, 1000))
+        
+        # Create analyzer
+        analyzer = SensitivityAnalyzer(
+            MyModel,
+            parameters=[p1, p2],
+            n_samples=10,
+            metrics=['population', 'resources']
+        )
+        
+        # Run analysis
+        results = analyzer.run()
+        
+        # Calculate sensitivity
+        sensitivity = analyzer.calculate_sensitivity()
+        ```
+    """
+    
+    def __init__(self, model_class: Type[Model], parameters: List[Parameter],
+                n_samples: int = 10, metrics: List[str] = None,
+                seed: Optional[int] = None):
+        """Initialize sensitivity analyzer.
+        
+        Args:
+            model_class: Model class to analyze.
+            parameters: List of parameters to vary.
+            n_samples: Number of samples per parameter.
+            metrics: List of metrics to analyze.
+            seed: Random seed.
+        """
+        self.model_class = model_class
+        self.parameters = parameters
+        self.n_samples = n_samples
+        self.metrics = metrics or []
+        self.seed = seed if seed is not None else 0
+        
+        # Create sample
+        self.sample = Sample(parameters, n_samples, seed)
+        
+        # Import actual sensitivity analysis
+        from .analysis import SensitivityAnalysis
+        
+        # Create model factory function
+        def model_factory(params=None, config=None):
+            """Create model instance with parameters."""
+            model = self.model_class(params)
+            return model
+        
+        # Create parameter ranges for sensitivity analysis
+        param_ranges = {}
+        for param in parameters:
+            param_ranges[param.name] = param.bounds
+        
+        # Create sensitivity analysis
+        self.analysis = SensitivityAnalysis(
+            model_factory=model_factory,
+            param_ranges=param_ranges,
+            metrics_of_interest=metrics,
+            num_samples=n_samples,
+            seed=seed
+        )
+    
+    def run(self) -> Dict[str, Any]:
+        """Run sensitivity analysis.
+        
+        Returns:
+            Dictionary of results.
+        """
+        return self.analysis.run()
+    
+    def calculate_sensitivity(self, method: str = 'sobol') -> Dict[str, Any]:
+        """Calculate sensitivity indices.
+        
+        Args:
+            method: Method for calculating sensitivity indices.
+                   'sobol' or 'morris'.
+            
+        Returns:
+            Dictionary of sensitivity indices.
+        """
+        if method == 'sobol':
+            return self.analysis.sobol_indices()
+        elif method == 'morris':
+            return self.analysis.morris_indices()
+        else:
+            raise ValueError(f"Unknown method: {method}")
+    
+    def plot(self, metric: Optional[str] = None, ax=None, **kwargs):
+        """Plot sensitivity analysis results.
+        
+        Args:
+            metric: Metric to plot. If None, plot all metrics.
+            ax: Matplotlib axis.
+            **kwargs: Additional keyword arguments for plotting.
+            
+        Returns:
+            Matplotlib axis.
+        """
+        # For now, we'll just call the underlying analysis plot method
+        return self.analysis.plot(metric, ax, **kwargs)
+
+
+class ModelCalibrator:
+    """Wrapper for model calibration with AgentPy-like interface.
+    
+    This class provides a more user-friendly interface for model
+    calibration with JaxABM.
+    
+    Example:
+        ```python
+        # Create parameters
+        p1 = Parameter('growth_rate', (0.01, 0.1))
+        p2 = Parameter('initial_population', (10, 1000))
+        
+        # Create calibrator
+        calibrator = ModelCalibrator(
+            MyModel,
+            parameters=[p1, p2],
+            target_metrics={'population': 500, 'resources': 1000},
+            metrics_weights={'population': 1.0, 'resources': 0.5}
+        )
+        
+        # Run calibration
+        optimal_params = calibrator.run()
+        ```
+    """
+    
+    def __init__(self, model_class: Type[Model], parameters: List[Parameter],
+                target_metrics: Dict[str, float], metrics_weights: Dict[str, float] = None,
+                learning_rate: float = 0.01, max_iterations: int = 20,
+                method: str = 'gradient', seed: Optional[int] = None):
+        """Initialize model calibrator.
+        
+        Args:
+            model_class: Model class to calibrate.
+            parameters: List of parameters to optimize.
+            target_metrics: Dictionary of target metrics.
+            metrics_weights: Dictionary of metric weights for loss function.
+            learning_rate: Learning rate for optimization.
+            max_iterations: Maximum number of iterations.
+            method: Optimization method ('gradient' or 'rl').
+            seed: Random seed.
+        """
+        self.model_class = model_class
+        self.parameters = parameters
+        self.target_metrics = target_metrics
+        self.metrics_weights = metrics_weights or {m: 1.0 for m in target_metrics}
+        self.learning_rate = learning_rate
+        self.max_iterations = max_iterations
+        self.method = method
+        self.seed = seed if seed is not None else 0
+        
+        # Import actual model calibrator
+        from .analysis import ModelCalibrator as JaxModelCalibrator
+        
+        # Create model factory function
+        def model_factory(params=None, config=None):
+            """Create model instance with parameters."""
+            model = self.model_class(params)
+            return model
+        
+        # Create initial parameters
+        initial_params = {}
+        for param in parameters:
+            # Start with middle of range
+            initial_params[param.name] = (param.bounds[0] + param.bounds[1]) / 2
+        
+        # Create calibrator
+        self.calibrator = JaxModelCalibrator(
+            model_factory=model_factory,
+            initial_params=initial_params,
+            target_metrics=target_metrics,
+            metrics_weights=metrics_weights,
+            learning_rate=learning_rate,
+            max_iterations=max_iterations,
+            method=method,
+            seed=seed
+        )
+    
+    def run(self) -> Dict[str, float]:
+        """Run calibration.
+        
+        Returns:
+            Dictionary of optimized parameters.
+        """
+        return self.calibrator.calibrate()
+    
+    def plot_progress(self, ax=None, **kwargs):
+        """Plot calibration progress.
+        
+        Args:
+            ax: Matplotlib axis.
+            **kwargs: Additional keyword arguments for plotting.
+            
+        Returns:
+            Matplotlib axis.
+        """
+        if ax is None:
+            fig, ax = plt.subplots()
+        
+        # Plot loss over iterations
+        if hasattr(self.calibrator, 'loss_history') and self.calibrator.loss_history:
+            ax.plot(self.calibrator.loss_history, **kwargs)
+            ax.set_xlabel('Iteration')
+            ax.set_ylabel('Loss')
+            ax.set_title('Calibration Progress')
+            ax.grid(True)
+        
+        return ax
