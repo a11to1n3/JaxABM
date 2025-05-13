@@ -11,6 +11,10 @@ The main classes are:
 - Environment: Container for environment state and spatial structures
 - Model: Base class for creating models
 - Results: Container for simulation results and analysis tools
+- Parameter: Class for parameter definition (for sensitivity analysis)
+- Sample: Class for parameter samples (for batch runs)
+- SensitivityAnalyzer: Wrapper for sensitivity analysis
+- ModelCalibrator: Wrapper for model calibration
 """
 
 import jax
