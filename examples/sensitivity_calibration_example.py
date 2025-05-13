@@ -273,8 +273,7 @@ def run_model_calibration():
         },
         learning_rate=0.01,
         max_iterations=5,  # Small number for quick example
-        method='gradient',
-        seed=42
+        method='gradient'
     )
     
     # Run calibration
