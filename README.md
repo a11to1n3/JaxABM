@@ -1,15 +1,16 @@
 # JaxABM: JAX-Accelerated Agent-Based Modeling Framework
 
-JaxABM is a high-performance agent-based modeling (ABM) framework that leverages JAX for GPU acceleration, vectorization, and automatic differentiation. This enables significantly faster simulation speeds and advanced capabilities compared to traditional Python-based ABM frameworks.
+JaxABM is a high-performance agent-based modeling (ABM) framework that leverages JAX for GPU acceleration, vectorization, and automatic differentiation, now with an easy-to-use AgentPy-like interface. This enables significantly faster simulation speeds and advanced capabilities compared to traditional Python-based ABM frameworks.
 
 ## Key Features
 
+- **Easy-to-use Interface**: AgentPy-like API for intuitive model development
 - **GPU Acceleration**: Run simulations on GPUs with minimal code changes
 - **Fully Vectorized**: Uses JAX's vectorization for highly parallel agent simulations
 - **Multiple Agent Types**: Support for heterogeneous agent populations
 - **Differentiable Simulations**: End-to-end differentiable ABM for gradient-based optimization
 - **Powerful Analysis Tools**: Built-in sensitivity analysis and parameter calibration
-- **Pure Functional Core**: Leverages JAX's functional programming model
+- **Spatial Structures**: Built-in support for grid and network environments
 - **Backward Compatible**: Legacy API support for traditional (non-JAX) modeling
 
 ## Installation
@@ -28,127 +29,189 @@ First install JAX following the [official instructions](https://github.com/googl
 pip install jaxabm[jax]
 ```
 
-## Core Abstractions
+## Quick Start
 
-The framework is built around several key abstractions:
-
-### `AgentType` Protocol
-
-Defines the behavior of agents:
-
-- `init_state(model_config, key)`: Initialize agent state
-- `update(state, model_state, model_config, key)`: Update agent state based on current state and environment
-
-### `AgentCollection`
-
-Manages a collection of agents of the same type:
-
-- `__init__(agent_type, num_agents)`: Create collection placeholder
-- `init(key, model_config)`: Initialize all agents in the collection
-- `update(model_state, key, model_config)`: Update all agents in parallel
-- `states`: Access the current states of all agents
-- `filter(condition)`: Creates a filtered subset of agents
-
-### `ModelConfig` 
-
-Provides simulation configuration:
-
-- `seed`: Random seed for reproducibility
-- `steps`: Number of simulation steps
-- `track_history`: Whether to track model history
-- `collect_interval`: Interval for collecting metrics
-
-### `Model`
-
-Coordinates the overall simulation:
-
-- `add_agent_collection(name, collection)`: Add an agent collection
-- `add_env_state(name, value)`: Add an environmental state variable
-- `initialize()`: Prepare the model for simulation
-- `step()`: Execute a single time step
-- `run(steps)`: Run the full simulation
-- `jit_step()`: Get a JIT-compiled step function for maximum performance
-
-## Basic Usage
-
-Here's how to create a simple agent-based model:
+Here's a simple example of a model with agents that move randomly:
 
 ```python
-import jax
+import jaxabm as jx
 import jax.numpy as jnp
-from jax import random
 
-from jaxabm.agent import AgentType, AgentCollection
-from jaxabm.core import ModelConfig
-from jaxabm.model import Model
-
-# Define an agent type
-class RandomWalker(AgentType):
-    def __init__(self, init_scale=1.0, step_size=0.1):
-        self.init_scale = init_scale
-        self.step_size = step_size
-        
-    def init_state(self, model_config, key):
+class MyAgent(jx.Agent):
+    def setup(self):
+        """Initialize agent state."""
         return {
-            'position': random.normal(key, (2,)) * self.init_scale
+            'x': 0.5,
+            'y': 0.5
         }
     
-    def update(self, state, model_state, model_config, key):
-        # Move in a random direction
-        movement = random.normal(key, (2,)) * self.step_size
-        new_position = state['position'] + movement
+    def step(self, model_state):
+        """Update agent state."""
+        # Get current position
+        x = self._state['x']
+        y = self._state['y']
+        
+        # Move randomly (using a simple deterministic rule for this example)
+        x += 0.01
+        y += 0.01
+        
+        # Wrap around at boundaries
+        x = x % 1.0
+        y = y % 1.0
         
         # Return updated state
-        return {'position': new_position}
+        return {
+            'x': x,
+            'y': y
+        }
 
-# Define environment update function
-def update_model_state(env_state, agent_states, params, key):
-    # Calculate statistics from agent states
-    walker_states = agent_states.get('walkers')
-    positions = walker_states['position']
+class MyModel(jx.Model):
+    def setup(self):
+        """Set up model with agents and environment."""
+        # Add agents
+        self.agents = self.add_agents(10, MyAgent)
+        
+        # Set up environment
+        self.env.add_state('time', 0)
     
-    mean_pos = jnp.mean(positions, axis=0)
-    std_pos = jnp.std(positions, axis=0)
-    
-    return {
-        'mean_position': mean_pos,
-        'std_position': std_pos,
-    }
+    def step(self):
+        """Execute model logic each step."""
+        # Update environment time
+        # Note: Agents are updated automatically by the framework
+        if hasattr(self._jax_model, 'state'):
+            time = self._jax_model.state['env'].get('time', 0)
+            self._jax_model.add_env_state('time', time + 1)
+        
+        # Record data
+        self.record('time', time)
 
-# Define metrics function
-def compute_metrics(env_state, agent_states, params):
-    return {
-        'mean_x': env_state['mean_position'][0],
-        'mean_y': env_state['mean_position'][1],
-        'std_x': env_state['std_position'][0],
-        'std_y': env_state['std_position'][1],
-    }
-
-# Create agent collection
-walkers = AgentCollection(
-    agent_type=RandomWalker(init_scale=1.0, step_size=0.1),
-    num_agents=1000
-)
-
-# Create model
-model = Model(
-    params={},
-    config=ModelConfig(seed=42, steps=100),
-    update_state_fn=update_model_state,
-    metrics_fn=compute_metrics
-)
-
-# Add agents and initial environment state
-model.add_agent_collection('walkers', walkers)
-model.add_env_state('mean_position', jnp.zeros(2))
-model.add_env_state('std_position', jnp.ones(2))
-
-# Run simulation
+# Run model
+model = MyModel({'steps': 100})
 results = model.run()
 
-# Access results
-print(f"Final position: ({results['mean_x'][-1]:.4f}, {results['mean_y'][-1]:.4f})")
-print(f"Final std dev: ({results['std_x'][-1]:.4f}, {results['std_y'][-1]:.4f})")
+# Plot results
+results.plot()
+```
+
+## The AgentPy-like Interface
+
+JaxABM now provides an easy-to-use, AgentPy-like interface built on top of the high-performance JAX core.
+
+### Agent
+
+The `Agent` class is the base class for all agents in the model. To create a custom agent, inherit from this class and override the `setup` and `step` methods.
+
+```python
+class MyAgent(jx.Agent):
+    def setup(self):
+        """Initialize agent state."""
+        return {
+            'x': 0,
+            'y': 0
+        }
+    
+    def step(self, model_state):
+        """Update agent state."""
+        return {
+            'x': self._state['x'] + 0.1,
+            'y': self._state['y'] + 0.1
+        }
+```
+
+### AgentList
+
+The `AgentList` class is a container for managing collections of agents.
+
+```python
+# In Model.setup():
+self.agents = self.add_agents(10, MyAgent)
+
+# Access agent attributes:
+x_positions = self.agents.x  # Returns array of x values
+
+# Filter agents:
+active_agents = self.agents.select(lambda agents: agents.active)
+```
+
+### Environment
+
+The `Environment` class is a container for environment state and methods for creating and managing spatial structures.
+
+```python
+# In Model.setup():
+self.env.add_state('temperature', 25.0)
+
+# Access environment state:
+temp = self.env.temperature
+```
+
+### Grid and Network
+
+For spatial models, the `Grid` and `Network` classes provide structures for agent interactions.
+
+```python
+# Create a grid:
+self.grid = jx.Grid(self, (10, 10))
+
+# Position agents on grid:
+self.grid.position_agents(self.agents)
+
+# Create a network:
+self.network = jx.Network(self)
+
+# Add edges:
+self.network.add_edge(agent1, agent2)
+```
+
+### Model
+
+The `Model` class is the base class for all models. It provides methods for setting up, running, and analyzing models.
+
+```python
+class MyModel(jx.Model):
+    def setup(self):
+        """Set up model with agents and environment."""
+        self.agents = self.add_agents(10, MyAgent)
+        self.env.add_state('time', 0)
+    
+    def step(self):
+        """Execute model logic each step."""
+        # Environment updates (agent updates happen automatically)
+        if hasattr(self._jax_model, 'state'):
+            time = self._jax_model.state['env'].get('time', 0)
+            self._jax_model.add_env_state('time', time + 1)
+        
+        # Record data
+        self.record('time', time)
+    
+    def end(self):
+        """Execute code at the end of a simulation."""
+        print("Simulation completed!")
+
+# Create and run model
+model = MyModel({'steps': 100})
+results = model.run()
+```
+
+### Results
+
+The `Results` class is a container for simulation results. It provides methods for accessing and visualizing results.
+
+```python
+# Run model and get results
+results = model.run()
+
+# Plot all metrics
+results.plot()
+
+# Access specific variables
+results.variables.agent.x.plot()
+
+# Save results
+results.save('my_results.pkl')
+
+# Load results
+results = jx.Results.load('my_results.pkl')
 ```
 
 ## Advanced Features
@@ -163,11 +226,8 @@ from jaxabm.analysis import SensitivityAnalysis
 # Create model factory function
 def create_model(params=None, config=None):
     # Create model with parameters from the params dict
-    propensity_to_consume = params.get('propensity_to_consume', 0.8)
-    productivity = params.get('productivity', 1.0)
-    
-    # Create and return model
-    # ...
+    model = MyModel(params)
+    return model
 
 # Perform sensitivity analysis
 sensitivity = SensitivityAnalysis(
@@ -227,17 +287,61 @@ optimal_params = calibrator.calibrate()
 
 The package includes several example models demonstrating different features:
 
-- `examples/minimal_example.py`: Minimal demonstration of the core API
-- `examples/jax_abm_simple.py`: Simplified model for quick experimentation
+- `examples/random_walk.py`: Simple model with random walking agents
+- `examples/schelling_model.py`: Classic Schelling segregation model
+- `examples/minimal_example_agentpy.py`: AgentPy-like version of the minimal example
+- `examples/agentpy_interface_example.py`: Bouncing agents with AgentPy-like interface
+- `examples/minimal_example.py`: Original JaxABM API example
+- `examples/jax_abm_simple.py`: Simplified model with original API
 - `examples/jax_abm_example.py`: Detailed economic model with sensitivity analysis
-- `examples/jax_abm_professional.py`: Professional example with full analysis toolkit
 
 Run examples with:
 
 ```bash
-python examples/jax_abm_professional.py --simulation --fast
-python examples/jax_abm_professional.py --sensitivity --calibration --fast
+python examples/random_walk.py
+python examples/schelling_model.py
 ```
+
+## Core Abstractions (Original API)
+
+The framework is also built around several key core abstractions that power the AgentPy-like interface:
+
+### `AgentType` Protocol
+
+Defines the behavior of agents:
+
+- `init_state(model_config, key)`: Initialize agent state
+- `update(state, model_state, model_config, key)`: Update agent state based on current state and environment
+
+### `AgentCollection`
+
+Manages a collection of agents of the same type:
+
+- `__init__(agent_type, num_agents)`: Create collection placeholder
+- `init(key, model_config)`: Initialize all agents in the collection
+- `update(model_state, key, model_config)`: Update all agents in parallel
+- `states`: Access the current states of all agents
+- `filter(condition)`: Creates a filtered subset of agents
+
+### `ModelConfig` 
+
+Provides simulation configuration:
+
+- `seed`: Random seed for reproducibility
+- `steps`: Number of simulation steps
+- `track_history`: Whether to track model history
+- `collect_interval`: Interval for collecting metrics
+
+### `JaxModel`
+
+Coordinates the overall simulation:
+
+- `add_agent_collection(name, collection)`: Add an agent collection
+- `add_env_state(name, value)`: Add an environmental state variable
+- `initialize()`: Prepare the model for simulation
+- `step()`: Execute a single time step
+- `run(steps)`: Run the full simulation
+- `jit_step()`: Get a JIT-compiled step function for maximum performance
 
 ## Performance
 
