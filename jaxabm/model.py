@@ -137,6 +137,11 @@ class Model:
             collection.init(keys[i + 1], self.config)
         
         self._is_initialized = True
+        
+        # Set up initial state
+        self._state = {
+            'env': self._env_state.copy()
+        }
     
     def step(self) -> Dict[str, Any]:
         """Execute a single time step of the model.
