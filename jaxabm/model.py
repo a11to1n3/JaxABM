@@ -272,12 +272,17 @@ class Model:
     
     @property
     def state(self) -> Dict[str, Any]:
-        """Get the current environmental state.
+        """Get the current model state.
         
         Returns:
-            Environmental state dictionary
+            Model state dictionary containing environment and agent states
         """
-        return self._env_state
+        if self._state is None:
+            # Initialize state if not done yet
+            self._state = {
+                'env': self._env_state.copy()
+            }
+        return self._state
     
     def jit_step(self) -> Callable:
         """JIT-compile the step function for improved performance.
