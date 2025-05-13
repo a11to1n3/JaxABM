@@ -970,6 +970,59 @@ class Model:
         
         return agent_list
     
+    def _update_agent_state(self, agent: Agent, new_state: Dict[str, Any]) -> None:
+        """Update agent state from custom methods.
+        
+        This method is called when an agent's custom method wants to update
+        the agent's state outside of the step function.
+        
+        Args:
+            agent: The agent to update.
+            new_state: The new state to apply.
+        """
+        # Find the agent's collection and index
+        for name, agents in self._agent_instances.items():
+            if agent in agents:
+                index = agents.index(agent)
+                
+                # If model is running, update the JAX model state
+                if self._running and self._jax_model and self._jax_model.state:
+                    # Update the agent's state in the JAX model
+                    agent_states = self._jax_model.state.get('agents', {})
+                    if name in agent_states:
+                        collection_states = agent_states[name]
+                        for state_name, value in new_state.items():
+                            if state_name in collection_states:
+                                # JAX arrays are immutable, so we need a workaround
+                                # This is not ideal for performance but necessary for flexibility
+                                current_values = collection_states[state_name]
+                                new_values = np.array(current_values)  # Convert to numpy for mutability
+                                new_values[index] = value
+                                # Update the JAX model state
+                                collection_states[state_name] = jnp.array(new_values)
+                
+                # Also update the agent's local state
+                agent._state.update(new_state)
+                break
+    
+    def get_agent(self, collection_name: str, agent_id: int) -> Optional[Agent]:
+        """Get an agent instance by collection name and ID.
+        
+        This allows accessing agent instances for calling custom methods.
+        
+        Args:
+            collection_name: Name of the agent collection.
+            agent_id: ID of the agent.
+            
+        Returns:
+            Agent instance if found, None otherwise.
+        """
+        if collection_name in self._agent_instances:
+            agents = self._agent_instances[collection_name]
+            if 0 <= agent_id < len(agents):
+                return agents[agent_id]
+        return None
+    
     def record(self, name: str, value: Any) -> None:
         """Record data for later analysis.
         
