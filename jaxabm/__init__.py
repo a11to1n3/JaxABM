@@ -2,11 +2,23 @@
 JaxABM: An agent-based modeling framework accelerated by JAX.
 
 This package provides tools for building, running, and analyzing agent-based models
-with traditional Python interfaces or with JAX acceleration.
+with an easy-to-use AgentPy-like interface while maintaining the performance benefits
+of JAX acceleration.
 
-The framework now offers two interfaces:
-1. The original JaxABM interface with AgentType, AgentCollection, etc.
-2. An AgentPy-like interface with Agent, AgentList, etc.
+The framework now provides primarily an AgentPy-like interface:
+- Agent: Base class for creating agents
+- AgentList: Container for managing collections of agents
+- Environment: Container for environment state and spatial structures
+- Grid: Grid environment for spatial models
+- Network: Network environment for network models
+- Model: Base class for creating models
+- Results: Container for simulation results
+
+The core JAX components are still available:
+- AgentType: Protocol for defining agent behaviors
+- AgentCollection: Collection of agents of the same type
+- ModelConfig: Configuration for model execution
+- JaxModel: Core model implementation with JAX acceleration
 
 The legacy version (non-JAX) is available directly from the package root.
 The JAX-accelerated version is available when JAX is installed.
@@ -47,22 +59,22 @@ def has_jax() -> bool:
 
 # Define what we'll export
 __all__ = [
-    # AgentPy-like components (new API)
+    # AgentPy-like components (primary API)
     "Agent",
     "AgentList",
-    "ap",
+    "Environment",
+    "Grid",
+    "Network",
+    "Model",
+    "Results",
     # Original JaxABM components
-    "ModelConfig",
     "AgentType", 
     "AgentCollection",
-    "Model",
-    # Environment
-    "Environment",
+    "JaxModel",
+    "ModelConfig",
     # Analysis tools
     "SensitivityAnalysis", 
     "ModelCalibrator",
-    # Results
-    "Results",
     # Utility functions
     "convert_to_numpy",
     "format_time",
@@ -76,21 +88,23 @@ __all__ = [
 ]
 
 # Initially set JAX components to None
-# Original JaxABM components
-AgentType = None
-AgentCollection = None
-Model = None
-ModelConfig = None
-SensitivityAnalysis = None
-ModelCalibrator = None
 # AgentPy-like components
 Agent = None
 AgentList = None
 Environment = None
+Grid = None
+Network = None
+Model = None
 Results = None
-# Namespace for AgentPy-like components
-ap = None
-# Initialize utility functions to None
+# Original JaxABM components
+AgentType = None
+AgentCollection = None
+JaxModel = None
+ModelConfig = None
+# Analysis tools
+SensitivityAnalysis = None
+ModelCalibrator = None
+# Utility functions
 convert_to_numpy = None
 format_time = None
 run_parallel_simulations = None
@@ -99,34 +113,33 @@ run_parallel_simulations = None
 HAS_JAX_LOADED = False
 if has_jax():
     try:
-        # Core components from their definitive locations (original API)
+        # Import core JaxABM components
         from .core import ModelConfig 
         from .agent import AgentType, AgentCollection
         from .model import Model as JaxModel
         from .analysis import SensitivityAnalysis, ModelCalibrator
         
-        # Import commonly used utilities
+        # Import utility functions
         from .utils import convert_to_numpy, format_time, run_parallel_simulations
         
-        # Import AgentPy-like components (new API)
-        from .api import Agent, AgentList, Environment, Model, Results
-        
-        # Create an namespace for AgentPy-like components (similar to 'import agentpy as ap')
-        class AgentPyNamespace:
-            """Namespace for AgentPy-like components."""
-            Agent = Agent
-            AgentList = AgentList
-            Environment = Environment
-            Model = Model
-            Results = Results
-        
-        ap = AgentPyNamespace
+        # Import AgentPy-like components (primary API)
+        from .agentpy import (
+            Agent, 
+            AgentList, 
+            Environment, 
+            Grid,
+            Network,
+            Model, 
+            Results
+        )
         
         # Set flag
         HAS_JAX_LOADED = True
     except ImportError as e:
         print(f"JaxABM warning: Could not import JAX components despite JAX being found. Error: {e}")
         HAS_JAX_LOADED = False
+else:
+    print("JaxABM warning: JAX not found. Using legacy components.")
 
 
 # --- Legacy Components --- 
@@ -142,15 +155,12 @@ try:
         utils as legacy_utils
     )
     # Add other legacy exports if needed
-    # from jaxabm.legacy.space import ...
-    # from jaxabm.legacy.batchrunner import batch_run
-    # from jaxabm.legacy.visualization import JaxABMVisualization
 except ImportError:
     print("JaxABM warning: Could not import legacy components.")
     # Define legacy placeholders if necessary
     LegacyAgent = None
     LegacyModel = None
-    # ... other legacy placeholders ...
+
 
 # Final check function for user convenience
 def jax_available() -> bool:
