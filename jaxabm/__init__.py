@@ -67,6 +67,10 @@ __all__ = [
     "Network",
     "Model",
     "Results",
+    # Sensitivity analysis and calibration (AgentPy-like)
+    "Parameter",
+    "Sample",
+    "SensitivityAnalyzer",
     # Original JaxABM components
     "AgentType", 
     "AgentCollection",
