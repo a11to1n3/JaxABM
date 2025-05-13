@@ -91,13 +91,13 @@ class RandomWalkModel(jx.Model):
     def step(self):
         """Execute model logic each step."""
         # Update environment time
-        if hasattr(self, '_jax_model') and hasattr(self._jax_model, 'state'):
+        # Note: Agents are updated automatically by the framework
+        if hasattr(self, '_jax_model') and self._jax_model.state and 'env' in self._jax_model.state:
             time = self._jax_model.state['env'].get('time', 0)
             self._jax_model.add_env_state('time', time + 1)
-        
-        # Agents will be updated automatically by the JAX model
-        # Record data after agent updates
-        self.record_data()
+            
+            # Record data after agent updates
+            self.record_data()
     
     def record_data(self):
         """Record data for analysis."""
