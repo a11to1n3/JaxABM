@@ -18,7 +18,7 @@ The new interface provides a more intuitive, object-oriented approach to buildin
 
 ### Agents
 
-Create agents by inheriting from the `Agent` class and implementing `setup` and `step` methods:
+Create agents by inheriting from the `Agent` class and implementing `setup` and `step` methods. You can also add custom methods for additional agent behaviors:
 
 ```python
 import jaxabm as jx
@@ -47,6 +47,12 @@ class MyAgent(jx.Agent):
             'x': x,
             'y': y
         }
+        
+    def custom_action(self, param):
+        """Custom method that can be called outside of step."""
+        new_x = param
+        self.update_state({'x': new_x})
+        return new_x
 ```
 
 ### Models
