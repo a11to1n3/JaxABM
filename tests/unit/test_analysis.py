@@ -262,7 +262,7 @@ class TestModelCalibrator(unittest.TestCase):
             'price_level': 2.0
         }
         
-        # Create calibrator with gradient method
+        # Create calibrator with gradient method (Adam)
         self.calibrator_gradient = ModelCalibrator(
             model_factory=create_test_model,
             initial_params=self.initial_params,
@@ -270,10 +270,10 @@ class TestModelCalibrator(unittest.TestCase):
             metrics_weights=self.weights,
             learning_rate=0.05,
             max_iterations=3,  # Small for testing
-            method="gradient"
+            method="adam"
         )
         
-        # Create calibrator with RL method
+        # Create calibrator with RL method (Q-learning)
         self.calibrator_rl = ModelCalibrator(
             model_factory=create_test_model,
             initial_params=self.initial_params,
@@ -281,7 +281,7 @@ class TestModelCalibrator(unittest.TestCase):
             metrics_weights=self.weights,
             learning_rate=0.05,
             max_iterations=3,  # Small for testing
-            method="rl"
+            method="q_learning"
         )
     
     def test_init(self):
@@ -293,10 +293,10 @@ class TestModelCalibrator(unittest.TestCase):
         self.assertEqual(self.calibrator_gradient.metrics_weights, self.weights)
         self.assertEqual(self.calibrator_gradient.learning_rate, 0.05)
         self.assertEqual(self.calibrator_gradient.max_iterations, 3)
-        self.assertEqual(self.calibrator_gradient.method, "gradient")
+        self.assertEqual(self.calibrator_gradient.method, "adam")
         
         # RL method
-        self.assertEqual(self.calibrator_rl.method, "rl")
+        self.assertEqual(self.calibrator_rl.method, "q_learning")
         
         # Invalid method should raise
         with self.assertRaises(ValueError):
@@ -319,7 +319,7 @@ class TestModelCalibrator(unittest.TestCase):
         
         # Check that history was recorded
         self.assertEqual(len(self.calibrator_gradient.loss_history), 3)
-        self.assertEqual(len(self.calibrator_gradient.param_history), 4)  # Initial + 3 iterations
+        self.assertEqual(len(self.calibrator_gradient.param_history), 3)  # 3 iterations
     
     def test_rl_calibration(self):
         """Test RL-based calibration."""
@@ -333,7 +333,7 @@ class TestModelCalibrator(unittest.TestCase):
         
         # Check that history was recorded
         self.assertEqual(len(self.calibrator_rl.loss_history), 3)
-        self.assertEqual(len(self.calibrator_rl.param_history), 4)  # Initial + 3 iterations
+        self.assertEqual(len(self.calibrator_rl.param_history), 3)  # 3 iterations
     
     def test_get_calibration_history(self):
         """Test getting calibration history."""
@@ -346,8 +346,10 @@ class TestModelCalibrator(unittest.TestCase):
         # Check structure
         self.assertIn('loss', history)
         self.assertIn('params', history)
+        self.assertIn('confidence_intervals', history)
         self.assertEqual(len(history['loss']), 3)
-        self.assertEqual(len(history['params']), 4)
+        self.assertEqual(len(history['params']), 3)
+        self.assertEqual(len(history['confidence_intervals']), 3)
     
     @unittest.skipIf(not matplotlib_available, "Matplotlib not available")
     def test_plot_calibration(self):
