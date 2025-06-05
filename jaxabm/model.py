@@ -317,10 +317,13 @@ class Model:
                 # Get the update method directly
                 update_method = collection.agent_type.update
                 # Apply it across all agents with vmap
+                # Determine the number of agents from the first state array to
+                # avoid assuming a specific state variable name
+                num_agents = next(iter(states.values())).shape[0]
                 updated_states = jax.vmap(
                     lambda agent_state, agent_key: update_method(
                         agent_state, model_state, self.config, agent_key)
-                )(states, jax.random.split(subkey, states['position'].shape[0]))
+                )(states, jax.random.split(subkey, num_agents))
                 updated_agent_states[name] = updated_states
             
             # --- State Update Phase ---
