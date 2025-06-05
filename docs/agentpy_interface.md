@@ -72,9 +72,9 @@ class MyModel(jx.Model):
         # (agents are stepped automatically)
         
         # Update environment
-        if hasattr(self._model, 'state'):
-            time = self._model.state['env'].get('time', 0)
-            self._model.add_env_state('time', time + 1)
+        if hasattr(self._jax_model, 'state'):
+            time = self._jax_model.state['env'].get('time', 0)
+            self._jax_model.add_env_state('time', time + 1)
         
         # Record data
         self.record('time', time)
