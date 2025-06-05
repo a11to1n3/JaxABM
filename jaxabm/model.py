@@ -317,13 +317,20 @@ class Model:
                 # Get the update method directly
                 update_method = collection.agent_type.update
                 # Apply it across all agents with vmap
-                # Determine the number of agents from the first state array to
-                # avoid assuming a specific state variable name
-                num_agents = next(iter(states.values())).shape[0]
+                # Determine number of agents from any state variable
+                try:
+                    example_state = next(iter(states.values()))
+                    n_agents = example_state.shape[0]
+                except (StopIteration, AttributeError):
+                    raise ValueError(
+                        "Agent states must be a dictionary of arrays with at least one entry"
+                    )
+
                 updated_states = jax.vmap(
                     lambda agent_state, agent_key: update_method(
-                        agent_state, model_state, self.config, agent_key)
-                )(states, jax.random.split(subkey, num_agents))
+                        agent_state, model_state, self.config, agent_key
+                    )
+                )(states, jax.random.split(subkey, n_agents))
                 updated_agent_states[name] = updated_states
             
             # --- State Update Phase ---
