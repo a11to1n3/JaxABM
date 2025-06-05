@@ -1,7 +1,7 @@
 """
-Core abstractions for agents in the AgentJax framework.
+Core abstractions for agents in the JaxABM framework.
 
-This module defines the key abstractions for working with agents in 
+This module defines the key abstractions for working with agents in
 JAX-accelerated agent-based models, including agent types and collections.
 """
 
