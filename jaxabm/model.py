@@ -349,4 +349,4 @@ class Model:
             return env_state, updated_agent_states, metrics, key
         
         # JIT-compile the step function
-        return jax.jit(_step_fn) 
+        return jax.jit(_step_fn)
