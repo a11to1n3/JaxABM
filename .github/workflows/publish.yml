@@ -1,0 +1,149 @@
+name: Publish to PyPI
+
+on:
+  push:
+    tags:
+      - 'v*'  # Trigger on version tags like v0.1.1, v0.2.0, etc.
+  release:
+    types: [published]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ['3.9', '3.10', '3.11']
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Python ${{ matrix.python-version }}
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ matrix.python-version }}
+    
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install pytest pytest-cov
+        pip install -e .
+    
+    - name: Run tests
+      run: |
+        python -m pytest tests/ -v --cov=jaxabm --cov-report=term-missing
+        
+    - name: Verify coverage threshold
+      run: |
+        python -c "
+        import subprocess
+        result = subprocess.run(['python', '-m', 'pytest', '--cov=jaxabm', '--cov-report=term', 'tests/'], 
+                              capture_output=True, text=True)
+        coverage_line = [line for line in result.stdout.split('\n') if 'TOTAL' in line]
+        if coverage_line:
+            coverage = int(coverage_line[0].split()[-1].replace('%', ''))
+            print(f'Current coverage: {coverage}%')
+            if coverage < 70:
+                raise Exception(f'Coverage {coverage}% is below required 70%')
+            print(f'✅ Coverage requirement met: {coverage}% >= 70%')
+        "
+
+  build:
+    needs: test
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.10'
+    
+    - name: Install build dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install build twine
+    
+    - name: Build package
+      run: |
+        python -m build
+    
+    - name: Check package
+      run: |
+        python -m twine check dist/*
+    
+    - name: Upload build artifacts
+      uses: actions/upload-artifact@v3
+      with:
+        name: dist
+        path: dist/
+
+  publish-test:
+    needs: build
+    runs-on: ubuntu-latest
+    environment: test-pypi
+    
+    steps:
+    - name: Download build artifacts
+      uses: actions/download-artifact@v3
+      with:
+        name: dist
+        path: dist/
+    
+    - name: Publish to Test PyPI
+      uses: pypa/gh-action-pypi-publish@release/v1
+      with:
+        password: ${{ secrets.TEST_PYPI_API_TOKEN }}
+        repository-url: https://test.pypi.org/legacy/
+        skip-existing: true
+
+  publish-pypi:
+    needs: [test, build, publish-test]
+    runs-on: ubuntu-latest
+    environment: pypi
+    if: startsWith(github.ref, 'refs/tags/v')
+    
+    steps:
+    - name: Download build artifacts
+      uses: actions/download-artifact@v3
+      with:
+        name: dist
+        path: dist/
+    
+    - name: Publish to PyPI
+      uses: pypa/gh-action-pypi-publish@release/v1
+      with:
+        password: ${{ secrets.PYPI_API_TOKEN }}
+
+  create-release:
+    needs: publish-pypi
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Create GitHub Release
+      uses: actions/create-release@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        tag_name: ${{ github.ref_name }}
+        release_name: JaxABM ${{ github.ref_name }}
+        body: |
+          ## JaxABM ${{ github.ref_name }}
+          
+          This release has been automatically published to PyPI.
+          
+          Install with: `pip install jaxabm==${{ github.ref_name }}`
+          
+          ### Changes
+          See [CHANGELOG](https://github.com/a11to1n3/JaxABM/blob/main/docs/changelog.rst) for detailed changes.
+          
+          ### Test Coverage
+          This release maintains the high test coverage standards:
+          - ✅ 70%+ overall test coverage
+          - ✅ All tests passing
+          - ✅ Quality assurance verified
+        draft: false
+        prerelease: false 
