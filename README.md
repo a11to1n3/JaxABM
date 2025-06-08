@@ -1,5 +1,11 @@
 # JaxABM: JAX-Accelerated Agent-Based Modeling Framework
 
+[![Tests](https://github.com/a11to1n3/JaxABM/actions/workflows/ci.yml/badge.svg)](https://github.com/a11to1n3/JaxABM/actions/workflows/ci.yml)
+[![Coverage](https://img.shields.io/badge/coverage-70%25-green.svg)](https://github.com/a11to1n3/JaxABM/actions)
+[![PyPI version](https://badge.fury.io/py/jaxabm.svg)](https://badge.fury.io/py/jaxabm)
+[![Python 3.9+](https://img.shields.io/badge/python-3.9+-blue.svg)](https://www.python.org/downloads/release/python-390/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+
 JaxABM is a high-performance agent-based modeling (ABM) framework that leverages JAX for GPU acceleration, vectorization, and automatic differentiation, now with an easy-to-use AgentPy-like interface. This enables significantly faster simulation speeds and advanced capabilities compared to traditional Python-based ABM frameworks.
 
 ## Key Features
