@@ -92,16 +92,27 @@ class SchellingModel(jx.Model):
             jnp.ones(n_agents - n_type0, dtype=jnp.int32)
         ])
         
+        # Position agents randomly on grid (avoiding overlaps)
+        positions = self._get_random_positions(n_agents, grid_size)
+        
         # Add types to agent collection
-        if hasattr(self.agents.collection, '_states'):
+        if hasattr(self.agents.collection, '_states') and self.agents.collection._states is not None:
             # Initialize agent states with types
-            if 'type' in self.agents.collection._states:
-                self.agents.collection._states['type'] = agent_types
-            
-            # Position agents randomly on grid (avoiding overlaps)
-            positions = self._get_random_positions(n_agents, grid_size)
-            if 'position' in self.agents.collection._states:
-                self.agents.collection._states['position'] = positions
+            self.agents.collection._states['type'] = agent_types
+            self.agents.collection._states['position'] = positions
+            if 'satisfied' not in self.agents.collection._states:
+                self.agents.collection._states['satisfied'] = jnp.zeros(n_agents, dtype=bool)
+            if 'moves' not in self.agents.collection._states:
+                self.agents.collection._states['moves'] = jnp.zeros(n_agents, dtype=jnp.int32)
+        else:
+            # Initialize states if they don't exist
+            if hasattr(self.agents.collection, '_states'):
+                self.agents.collection._states = {
+                    'type': agent_types,
+                    'position': positions,
+                    'satisfied': jnp.zeros(n_agents, dtype=bool),
+                    'moves': jnp.zeros(n_agents, dtype=jnp.int32)
+                }
         
         # Initialize grid state - represents what type of agent is at each position
         # -1 means empty, 0 or 1 is the agent type

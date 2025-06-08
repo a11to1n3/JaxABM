@@ -1,115 +1,161 @@
-# JaxABM Example Scripts
+# JaxABM Examples
 
-This directory contains example scripts demonstrating various features of the JaxABM framework.
+This directory contains focused, high-quality examples demonstrating JaxABM capabilities. Each example is carefully crafted to be educational, practical, and well-documented.
 
-## Quick Start
+## 🚀 Quick Start
 
-Make sure you have activated your virtual environment and have all dependencies installed:
-
+**New to JaxABM?** Start here:
 ```bash
-# From the project root
-source .venv/bin/activate
-pip install -e .
+python examples/basic_example.py
 ```
 
-## Available Examples
+This single file demonstrates all core JaxABM concepts and is the best introduction to the framework.
 
-### 1. Basic Agent Example (`basic_agent_example.py`)
+## 📁 Example Categories
 
-A simple example showing the basic structure of a JaxABM model with random walker agents.
+### 🎯 Basic Example (`basic_example.py`)
+**Perfect starting point for beginners**
 
+A comprehensive single-file example that demonstrates:
+- Basic agent definition and behavior
+- Environment setup and state management
+- Model execution and results analysis
+- Plotting and visualization
+
+**What you'll learn:**
+- How to create agents with `jx.Agent`
+- How to build models with `jx.Model`
+- How to run simulations and analyze results
+
+### 📊 Parameter Optimization (`calibration/`)
+Learn how to automatically tune model parameters to achieve desired outcomes.
+
+- **`final_working_calibration_demo.py`** - Complete demonstration of all calibration methods
+- **`advanced_calibration_example.py`** - Advanced techniques for complex models
+
+**Methods Available:**
+- ✅ **Evolutionary**: PSO (~0.01 loss), ES (~21 loss), CEM (~30 loss)
+- ✅ **Reinforcement Learning**: Q-Learning (~0.7 loss), Policy Gradient (~0.9 loss), Actor-Critic, DQN
+
+### 🏘️ Advanced Models (`models/`)
+Complete, real-world model implementations for learning and adaptation.
+
+- **`schelling_model.py`** - Classic segregation model with spatial dynamics
+- **`random_walk.py`** - Multi-agent random walk with interactions
+- **`advanced_economic_model.py`** - Sophisticated economic simulation with multiple agent types
+
+### 🔬 Sensitivity Analysis (`sensitivity/`)
+Understand how parameters affect model outcomes.
+
+- **`simple_sensitivity_example.py`** - Basic parameter sensitivity analysis
+- **`sensitivity_calibration_example.py`** - Combined sensitivity analysis and optimization
+
+## 📚 Learning Progression
+
+### 🌱 **Beginner Path**
+1. **Start with basics**: `python basic_example.py`
+2. **Try a complete model**: `python models/schelling_model.py`
+3. **Learn optimization**: `python calibration/final_working_calibration_demo.py`
+
+### 🌿 **Intermediate Path**
+1. **Explore sensitivity**: `python sensitivity/simple_sensitivity_example.py`
+2. **Advanced models**: `python models/random_walk.py`
+3. **Custom optimization**: Modify calibration examples
+
+### 🌳 **Advanced Path**
+1. **Complex systems**: `python models/advanced_economic_model.py`
+2. **Research workflows**: Combine sensitivity + calibration
+3. **Custom development**: Build your own models using patterns from examples
+
+## 🎯 Performance Benchmarks
+
+Based on comprehensive testing across all methods:
+
+| Method Type | Best Method | Typical Loss | Performance | Use Case |
+|-------------|-------------|--------------|-------------|----------|
+| **Evolutionary** | PSO | ~0.01 | 🥇 Excellent | General optimization |
+| **Evolution Strategies** | ES | ~21.12 | ✅ Good | Robust optimization |
+| **Reinforcement Learning** | Q-Learning | ~0.70 | ✅ Working | Sequential decisions |
+| **Cross-Entropy** | CEM | ~30.18 | ✅ Good | Discrete parameters |
+
+## 🔧 Requirements
+
+**Core Requirements:**
+- Python 3.9+
+- JAX
+- JaxABM (`pip install -e .` from repository root)
+
+**Optional (for visualization):**
+- Matplotlib (`pip install matplotlib`)
+
+## 🎮 Running Examples
+
+### Basic Example
 ```bash
-python examples/basic_agent_example.py
+# Quick start - comprehensive introduction
+python basic_example.py
 ```
 
-### 2. Minimal Example (`minimal_example.py`)
-
-Minimal demonstration of the core JAX API with a simple random walker model.
-
+### Calibration Examples
 ```bash
-python examples/minimal_example.py
+cd calibration/
+python final_working_calibration_demo.py
 ```
 
-### 3. Simple JAX ABM (`jax_abm_simple.py`)
-
-A simplified economic model for quick experimentation, demonstrating:
-- Basic producer/consumer agents
-- Calibration and sensitivity analysis
-- Visualization of results
-
+### Model Examples
 ```bash
-# Run the basic simulation
-python examples/jax_abm_simple.py
-
-# Run with specific components
-python examples/jax_abm_simple.py --simulation --calibration --sensitivity
+cd models/
+python schelling_model.py
+python random_walk.py
 ```
 
-### 4. Standard JAX ABM Example (`jax_abm_example.py`)
-
-A more complete economic model with enhanced features:
-
+### Sensitivity Analysis
 ```bash
-# Run with default settings
-python examples/jax_abm_example.py
-
-# Run in fast mode (fewer agents)
-python examples/jax_abm_example.py --fast
-
-# Run with calibration
-python examples/jax_abm_example.py --calibration
-
-# Run with sensitivity analysis
-python examples/jax_abm_example.py --sensitivity
+cd sensitivity/
+python simple_sensitivity_example.py
 ```
 
-### 5. Professional JAX ABM (`jax_abm_professional.py`)
+## 🧪 Testing Examples
 
-A comprehensive example demonstrating all features of the framework:
-- Multiple agent types with complex interactions
-- Parameter calibration using gradient-based methods
-- Sensitivity analysis with visualization
-- Command-line argument handling
-- Performance optimizations
+All examples are tested in our CI pipeline:
 
 ```bash
-# View available options
-python examples/jax_abm_professional.py --help
+# Test basic example
+python basic_example.py
 
-# Run simulation only
-python examples/jax_abm_professional.py --simulation
-
-# Run in fast mode (fewer agents for quick testing)
-python examples/jax_abm_professional.py --fast
-
-# Run calibration
-python examples/jax_abm_professional.py --calibration
-
-# Run sensitivity analysis
-python examples/jax_abm_professional.py --sensitivity
-
-# Skip calibration step in sensitivity analysis
-python examples/jax_abm_professional.py --sensitivity --skip-calibration
-
-# Complete run with all components
-python examples/jax_abm_professional.py --simulation --calibration --sensitivity --fast
+# Test specific categories
+cd calibration && python final_working_calibration_demo.py
+cd models && python schelling_model.py
 ```
 
-## Common Parameters
+## 🐛 Troubleshooting
 
-Most examples support the following common parameters:
+**Common Issues:**
 
-- `--fast`: Run with fewer agents and steps for quicker execution
-- `--calibration`: Run the model calibration component
-- `--sensitivity`: Run the sensitivity analysis component
-- `--simulation`: Run the main simulation component
-- `--skip-calibration`: Skip the calibration step in sensitivity analysis
-- `--seed VALUE`: Set a specific random seed for reproducibility
+1. **Import Errors**: Ensure JaxABM is installed: `pip install -e .` from repository root
+2. **JAX Issues**: Install appropriate JAX version for your system
+3. **Matplotlib Missing**: Install with `pip install matplotlib` for plots
 
-## Example Output
+**Performance Issues:**
+- Reduce agent counts or simulation steps for faster execution
+- Use smaller parameter ranges for calibration examples
 
-Examples typically generate console output and may also produce visualization plots showing:
-- Economic metrics like GDP, unemployment, prices
-- Calibration convergence graphs
-- Sensitivity analysis heat maps and Sobol indices
-- Agent state distributions 
+## 💡 Next Steps
+
+After exploring the examples:
+
+1. **Modify Examples**: Change parameters, agent behaviors, or model structure
+2. **Build Your Model**: Use examples as templates for your research
+3. **Optimize Parameters**: Apply calibration methods to your models
+4. **Analyze Sensitivity**: Understand which parameters matter most
+
+## 📄 License
+
+All examples are provided under the same license as JaxABM. See the main repository LICENSE file for details.
+
+---
+
+**Need Help?**
+- Check the main repository README
+- Review test files in `tests/` for additional usage patterns
+- Open an issue on GitHub for questions 

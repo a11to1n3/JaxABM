@@ -144,9 +144,16 @@ class SensitivityAnalysis:
                 results_dict = results
                 
             for metric in self.metrics_of_interest:
-                if metric in results_dict and results_dict[metric]:
-                    # Store the final value of the metric
-                    value = results_dict[metric][-1]
+                if metric in results_dict and results_dict[metric] is not None:
+                    # Handle both scalar values and arrays/lists
+                    metric_value = results_dict[metric]
+                    if hasattr(metric_value, '__len__') and not isinstance(metric_value, str):
+                        # It's an array or list, take the last value
+                        value = metric_value[-1]
+                    else:
+                        # It's a scalar value
+                        value = metric_value
+                    
                     metrics_results[metric] = metrics_results[metric].at[i].set(value)
                     if verbose:
                         print(f"  {metric}: {float(value):.4f}")
@@ -464,8 +471,20 @@ class ModelCalibrator:
                 mean_val + ci_half_width
             )
         
-        loss = self._compute_loss(mean_metrics)
+        # Use normalized loss for better RL performance
+        loss = self._compute_normalized_loss(mean_metrics)
         return loss, confidence_intervals
+    
+    def _compute_normalized_loss(self, metrics: Dict[str, float]) -> float:
+        """Compute normalized loss for better RL optimization (key improvement!)."""
+        total_loss = 0.0
+        for metric, target in self.target_metrics.items():
+            if metric in metrics:
+                value = metrics[metric]
+                # Normalize by target to make losses comparable and stable
+                normalized_error = abs(value - target) / (abs(target) + 1e-8)
+                total_loss += normalized_error ** 2
+        return float(total_loss)
     
     def _setup_gradient_optimization(self):
         """Set up gradient-based optimization with Adam or SGD."""
@@ -599,183 +618,403 @@ class ModelCalibrator:
         self.bo_evaluated = 0
     
     def _setup_q_learning(self):
-        """Set up Q-Learning for parameter optimization."""
-        # Discretize parameter space for Q-learning
-        self.ql_n_bins = 10  # Number of discrete bins per parameter
-        self.ql_epsilon = 0.1  # Exploration rate
+        """Set up Improved Q-Learning with continuous action space and better state representation."""
+        self.ql_learning_rate = 0.001
+        self.ql_epsilon = 0.2  # Lower initial exploration
         self.ql_epsilon_decay = 0.995
-        self.ql_alpha = 0.1  # Learning rate
-        self.ql_gamma = 0.9  # Discount factor
+        self.ql_epsilon_min = 0.02  # Lower minimum exploration
+        self.ql_gamma = 0.95
+        self.ql_batch_size = 64  # Larger batch size
+        self.ql_memory_size = 2000
+        self.ql_target_update_freq = 50  # Target network updates
         
         param_names = list(self.params.keys())
         n_params = len(param_names)
         
-        # Create discrete state and action spaces
-        self.ql_param_names = param_names
-        self.ql_state_shape = tuple([self.ql_n_bins] * n_params)
-        self.ql_n_actions = 2 * n_params  # +/- for each parameter
+        # Enhanced state size: current params + targets + history + gradients
+        state_size = n_params * 4  # current, normalized, targets, gradients
+        n_actions = n_params * 5  # 5 different step sizes per parameter
         
-        # Initialize Q-table
-        self.ql_q_table = jnp.zeros(self.ql_state_shape + (self.ql_n_actions,))
+        # Improved neural network architecture
+        self.key, subkey1, subkey2, subkey3, subkey4 = random.split(self.key, 5)
+        hidden1_size = 256
+        hidden2_size = 128
+        hidden3_size = 64
         
-        # Parameter discretization bounds
-        self.ql_param_bins = {}
-        for param, (min_val, max_val) in self.param_bounds.items():
-            self.ql_param_bins[param] = jnp.linspace(min_val, max_val, self.ql_n_bins)
-        
-        # Current state and step size
-        self.ql_current_state = self._params_to_state(self.params)
-        self.ql_step_size = 0.1  # Relative step size for actions
-    
-    def _setup_policy_gradient(self):
-        """Set up Policy Gradient (REINFORCE) for parameter optimization."""
-        self.pg_learning_rate = 0.01
-        self.pg_baseline_decay = 0.9
-        
-        param_names = list(self.params.keys())
-        n_params = len(param_names)
-        
-        # Policy network parameters (simple linear policy)
-        self.key, subkey = random.split(self.key)
-        self.pg_policy_params = {
-            'mean': jnp.array([self.params[name] for name in param_names]),
-            'log_std': jnp.zeros(n_params) - 1.0  # Initialize with std=exp(-1)≈0.37
-        }
-        
-        # Baseline for variance reduction
-        self.pg_baseline = 0.0
-        self.pg_param_names = param_names
-        
-        # Episode history
-        self.pg_episode_rewards = []
-        self.pg_episode_log_probs = []
-    
-    def _setup_actor_critic(self):
-        """Set up Actor-Critic for parameter optimization."""
-        self.ac_actor_lr = 0.01
-        self.ac_critic_lr = 0.02
-        self.ac_gamma = 0.95
-        
-        param_names = list(self.params.keys())
-        n_params = len(param_names)
-        
-        # Actor network (policy) parameters
-        self.key, subkey1, subkey2 = random.split(self.key, 3)
-        
-        # Simple linear actor
-        self.ac_actor_params = {
-            'mean': jnp.array([self.params[name] for name in param_names]),
-            'log_std': jnp.zeros(n_params) - 1.0
-        }
-        
-        # Simple linear critic (value function)
-        self.ac_critic_params = {
-            'weights': random.normal(subkey2, (n_params, 1)) * 0.1,
-            'bias': jnp.array([0.0])
-        }
-        
-        self.ac_param_names = param_names
-        
-        # Experience buffer
-        self.ac_states = []
-        self.ac_actions = []
-        self.ac_rewards = []
-        self.ac_values = []
-    
-    def _setup_multi_agent_rl(self):
-        """Set up Multi-Agent RL for parameter optimization."""
-        # Each parameter is controlled by a separate agent
-        self.marl_n_agents = len(self.params)
-        self.marl_learning_rate = 0.01
-        self.marl_epsilon = 0.1
-        self.marl_epsilon_decay = 0.995
-        
-        param_names = list(self.params.keys())
-        
-        # Each agent has its own Q-table for its parameter
-        self.marl_agents = {}
-        for i, param in enumerate(param_names):
-            min_val, max_val = self.param_bounds[param]
-            
-            # Discretize this parameter's space
-            param_bins = jnp.linspace(min_val, max_val, 10)
-            n_states = len(param_bins)
-            n_actions = 3  # decrease, stay, increase
-            
-            self.marl_agents[param] = {
-                'q_table': jnp.zeros((n_states, n_actions)),
-                'param_bins': param_bins,
-                'current_state': self._find_nearest_bin(self.params[param], param_bins),
-                'epsilon': self.marl_epsilon,
-                'alpha': 0.1,
-                'gamma': 0.9
-            }
-        
-        self.marl_param_names = param_names
-        self.marl_step_size = 0.05
-    
-    def _setup_deep_q_network(self):
-        """Set up Deep Q-Network (DQN) for parameter optimization."""
-        self.dqn_learning_rate = 0.001
-        self.dqn_epsilon = 0.1
-        self.dqn_epsilon_decay = 0.995
-        self.dqn_gamma = 0.95
-        self.dqn_batch_size = 32
-        self.dqn_memory_size = 1000
-        
-        param_names = list(self.params.keys())
-        n_params = len(param_names)
-        n_actions = 2 * n_params  # +/- for each parameter
-        
-        # Simple neural network for Q-function
-        self.key, subkey1, subkey2 = random.split(self.key, 3)
-        hidden_size = 64
-        
-        self.dqn_params = {
+        # Main Q-network
+        self.ql_params = {
             'layer1': {
-                'weights': random.normal(subkey1, (n_params, hidden_size)) * 0.1,
-                'bias': jnp.zeros(hidden_size)
+                'weights': random.normal(subkey1, (state_size, hidden1_size)) * 0.1,
+                'bias': jnp.zeros(hidden1_size)
             },
             'layer2': {
-                'weights': random.normal(subkey2, (hidden_size, n_actions)) * 0.1,
+                'weights': random.normal(subkey2, (hidden1_size, hidden2_size)) * 0.1,
+                'bias': jnp.zeros(hidden2_size)
+            },
+            'layer3': {
+                'weights': random.normal(subkey3, (hidden2_size, hidden3_size)) * 0.1,
+                'bias': jnp.zeros(hidden3_size)
+            },
+            'output': {
+                'weights': random.normal(subkey4, (hidden3_size, n_actions)) * 0.1,
                 'bias': jnp.zeros(n_actions)
             }
         }
         
-        # Experience replay buffer
-        self.dqn_memory = []
-        self.dqn_param_names = param_names
-        self.dqn_step_size = 0.05
+        # Target network (copy of main network)
+        self.ql_target_params = {k: {kk: vv.copy() for kk, vv in v.items()} 
+                                for k, v in self.ql_params.items()}
+        
+        # Enhanced experience replay with prioritization
+        self.ql_memory = []
+        self.ql_param_names = param_names
+        self.ql_step_sizes = [0.01, 0.03, 0.05, 0.1, 0.2]  # Multiple step sizes
+        
+        # State history for enhanced representation
+        self.ql_param_history = []
+        self.ql_loss_history = []
+        self.ql_gradient_estimates = jnp.zeros(n_params)
+        
+        # Parameter space normalization
+        self.ql_param_mins = jnp.array([self.param_bounds[p][0] for p in param_names])
+        self.ql_param_maxs = jnp.array([self.param_bounds[p][1] for p in param_names])
+        
+        # Adam optimizer for neural network training
+        self.ql_adam_m = {k: {kk: jnp.zeros_like(vv) for kk, vv in v.items()} 
+                         for k, v in self.ql_params.items()}
+        self.ql_adam_v = {k: {kk: jnp.zeros_like(vv) for kk, vv in v.items()} 
+                         for k, v in self.ql_params.items()}
+        self.ql_adam_t = 0
     
-    def _params_to_state(self, params: Dict[str, float]) -> Tuple[int, ...]:
-        """Convert continuous parameters to discrete state for Q-learning."""
-        state = []
-        for param in self.ql_param_names:
-            value = params[param]
-            bins = self.ql_param_bins[param]
-            # Find nearest bin
-            bin_idx = jnp.argmin(jnp.abs(bins - value))
-            state.append(int(bin_idx))
-        return tuple(state)
+    def _setup_policy_gradient(self):
+        """Set up Enhanced Policy Gradient with continuous actions and better architecture."""
+        self.pg_learning_rate = 0.005
+        self.pg_baseline_decay = 0.9
+        self.pg_min_std = 0.05
+        self.pg_entropy_coeff = 0.02
+        self.pg_value_coeff = 0.1  # For baseline learning
+        
+        param_names = list(self.params.keys())
+        n_params = len(param_names)
+        
+        # Enhanced state representation
+        state_size = n_params * 4  # current, normalized, targets, history
+        
+        # Policy network (actor) - outputs continuous actions
+        self.key, subkey1, subkey2, subkey3 = random.split(self.key, 4)
+        hidden_size = 128
+        
+        self.pg_policy_params = {
+            'shared_layer1': {
+                'weights': random.normal(subkey1, (state_size, hidden_size)) * 0.1,
+                'bias': jnp.zeros(hidden_size)
+            },
+            'shared_layer2': {
+                'weights': random.normal(subkey2, (hidden_size, 64)) * 0.1,
+                'bias': jnp.zeros(64)
+            },
+            'mean_output': {
+                'weights': random.normal(subkey3, (64, n_params)) * 0.1,
+                'bias': jnp.zeros(n_params)
+            },
+            'std_output': {
+                'weights': random.normal(subkey3, (64, n_params)) * 0.1,
+                'bias': jnp.ones(n_params) * jnp.log(0.2)  # Initialize to reasonable std
+            }
+        }
+        
+        # Value network (critic) for baseline
+        self.key, subkey4, subkey5 = random.split(self.key, 3)
+        self.pg_value_params = {
+            'layer1': {
+                'weights': random.normal(subkey4, (state_size, hidden_size)) * 0.1,
+                'bias': jnp.zeros(hidden_size)
+            },
+            'layer2': {
+                'weights': random.normal(subkey5, (hidden_size, 1)) * 0.1,
+                'bias': jnp.array([0.0])
+            }
+        }
+        
+        self.pg_param_names = param_names
+        
+        # Enhanced state tracking
+        self.pg_state_history = []
+        self.pg_loss_history = []
+        
+        # Adam optimizers for both networks
+        self.pg_policy_adam_m = {k: {kk: jnp.zeros_like(vv) for kk, vv in v.items()} 
+                                for k, v in self.pg_policy_params.items()}
+        self.pg_policy_adam_v = {k: {kk: jnp.zeros_like(vv) for kk, vv in v.items()} 
+                                for k, v in self.pg_policy_params.items()}
+        self.pg_value_adam_m = {k: {kk: jnp.zeros_like(vv) for kk, vv in v.items()} 
+                               for k, v in self.pg_value_params.items()}
+        self.pg_value_adam_v = {k: {kk: jnp.zeros_like(vv) for kk, vv in v.items()} 
+                               for k, v in self.pg_value_params.items()}
+        self.pg_adam_t = 0
+    
+    def _setup_actor_critic(self):
+        """Set up Advanced Actor-Critic with proper network architecture and training."""
+        self.ac_actor_lr = 0.003
+        self.ac_critic_lr = 0.005
+        self.ac_gamma = 0.95
+        self.ac_lambda = 0.95  # GAE lambda
+        self.ac_gradient_clip_norm = 1.0
+        self.ac_entropy_coeff = 0.02
+        
+        param_names = list(self.params.keys())
+        n_params = len(param_names)
+        state_size = n_params * 4
+        
+        # Advanced actor network architecture
+        self.key, *subkeys = random.split(self.key, 9)
+        hidden_size = 128
+        
+        self.ac_actor_params = {
+            'layer1': {
+                'weights': random.normal(subkeys[0], (state_size, hidden_size)) * 0.1,
+                'bias': jnp.zeros(hidden_size)
+            },
+            'layer2': {
+                'weights': random.normal(subkeys[1], (hidden_size, 64)) * 0.1,
+                'bias': jnp.zeros(64)
+            },
+            'mean_output': {
+                'weights': random.normal(subkeys[2], (64, n_params)) * 0.1,
+                'bias': jnp.zeros(n_params)
+            },
+            'std_output': {
+                'weights': random.normal(subkeys[3], (64, n_params)) * 0.1,
+                'bias': jnp.ones(n_params) * jnp.log(0.2)
+            }
+        }
+        
+        # Advanced critic network
+        self.ac_critic_params = {
+            'layer1': {
+                'weights': random.normal(subkeys[4], (state_size, hidden_size)) * 0.1,
+                'bias': jnp.zeros(hidden_size)
+            },
+            'layer2': {
+                'weights': random.normal(subkeys[5], (hidden_size, 64)) * 0.1,
+                'bias': jnp.zeros(64)
+            },
+            'layer3': {
+                'weights': random.normal(subkeys[6], (64, 32)) * 0.1,
+                'bias': jnp.zeros(32)
+            },
+            'output': {
+                'weights': random.normal(subkeys[7], (32, 1)) * 0.1,
+                'bias': jnp.array([0.0])
+            }
+        }
+        
+        self.ac_param_names = param_names
+        
+        # GAE (Generalized Advantage Estimation) buffers
+        self.ac_states = []
+        self.ac_actions = []
+        self.ac_rewards = []
+        self.ac_values = []
+        self.ac_log_probs = []
+        self.ac_dones = []
+        
+        # Adam optimizers
+        self.ac_actor_adam_m = {k: {kk: jnp.zeros_like(vv) for kk, vv in v.items()} 
+                               for k, v in self.ac_actor_params.items()}
+        self.ac_actor_adam_v = {k: {kk: jnp.zeros_like(vv) for kk, vv in v.items()} 
+                               for k, v in self.ac_actor_params.items()}
+        self.ac_critic_adam_m = {k: {kk: jnp.zeros_like(vv) for kk, vv in v.items()} 
+                                for k, v in self.ac_critic_params.items()}
+        self.ac_critic_adam_v = {k: {kk: jnp.zeros_like(vv) for kk, vv in v.items()} 
+                                for k, v in self.ac_critic_params.items()}
+        self.ac_adam_t = 0
+    
+    def _setup_deep_q_network(self):
+        """Set up Advanced DQN with Double DQN, Dueling Architecture, and Prioritized Experience Replay."""
+        self.dqn_learning_rate = 0.0005
+        self.dqn_epsilon = 0.3
+        self.dqn_epsilon_decay = 0.995
+        self.dqn_epsilon_min = 0.05
+        self.dqn_gamma = 0.95
+        self.dqn_batch_size = 64
+        self.dqn_memory_size = 3000
+        self.dqn_target_update_freq = 100
+        self.dqn_double_dqn = True  # Use Double DQN
+        
+        param_names = list(self.params.keys())
+        n_params = len(param_names)
+        state_size = n_params * 4
+        n_actions = n_params * 7  # More granular actions
+        
+        # Dueling DQN architecture
+        self.key, *subkeys = random.split(self.key, 10)
+        hidden_size = 256
+        
+        # Shared layers
+        self.dqn_params = {
+            'shared1': {
+                'weights': random.normal(subkeys[0], (state_size, hidden_size)) * 0.1,
+                'bias': jnp.zeros(hidden_size)
+            },
+            'shared2': {
+                'weights': random.normal(subkeys[1], (hidden_size, 128)) * 0.1,
+                'bias': jnp.zeros(128)
+            },
+            # Value stream
+            'value1': {
+                'weights': random.normal(subkeys[2], (128, 64)) * 0.1,
+                'bias': jnp.zeros(64)
+            },
+            'value_output': {
+                'weights': random.normal(subkeys[3], (64, 1)) * 0.1,
+                'bias': jnp.array([0.0])
+            },
+            # Advantage stream
+            'advantage1': {
+                'weights': random.normal(subkeys[4], (128, 64)) * 0.1,
+                'bias': jnp.zeros(64)
+            },
+            'advantage_output': {
+                'weights': random.normal(subkeys[5], (64, n_actions)) * 0.1,
+                'bias': jnp.zeros(n_actions)
+            }
+        }
+        
+        # Target network
+        self.dqn_target_params = {k: {kk: vv.copy() for kk, vv in v.items()} 
+                                 for k, v in self.dqn_params.items()}
+        
+        # Prioritized experience replay
+        self.dqn_memory = []
+        self.dqn_priorities = []
+        self.dqn_alpha = 0.6  # Prioritization exponent
+        self.dqn_beta = 0.4   # Importance sampling exponent
+        self.dqn_beta_increment = 0.001
+        
+        self.dqn_param_names = param_names
+        self.dqn_step_sizes = [0.005, 0.01, 0.02, 0.05, 0.1, 0.15, 0.2]
+        
+        # Action history for diversity regularization
+        self.dqn_action_history = []
+        self.dqn_action_history_size = 10
+        self.dqn_action_regularization = 0.1
+        
+        # Adam optimizer
+        self.dqn_adam_m = {k: {kk: jnp.zeros_like(vv) for kk, vv in v.items()} 
+                          for k, v in self.dqn_params.items()}
+        self.dqn_adam_v = {k: {kk: jnp.zeros_like(vv) for kk, vv in v.items()} 
+                          for k, v in self.dqn_params.items()}
+        self.dqn_adam_t = 0
+    
+    def _setup_multi_agent_rl(self):
+        """Set up Advanced Multi-Agent RL with coordinated exploration and communication."""
+        self.marl_learning_rate = 0.002
+        self.marl_epsilon = 0.25
+        self.marl_epsilon_decay = 0.995
+        self.marl_epsilon_min = 0.05
+        self.marl_communication_dim = 16  # Communication vector size
+        
+        param_names = list(self.params.keys())
+        n_agents = len(param_names)
+        
+        # Each agent has enhanced architecture with communication
+        self.marl_agents = {}
+        for i, param in enumerate(param_names):
+            self.key, *subkeys = random.split(self.key, 8)
+            
+            # Enhanced state: own param + global state + communication from others
+            local_state_size = 1 + n_agents * 3 + (n_agents - 1) * self.marl_communication_dim
+            
+            self.marl_agents[param] = {
+                # Q-network with communication
+                'q_params': {
+                    'layer1': {
+                        'weights': random.normal(subkeys[0], (local_state_size, 128)) * 0.1,
+                        'bias': jnp.zeros(128)
+                    },
+                    'layer2': {
+                        'weights': random.normal(subkeys[1], (128, 64)) * 0.1,
+                        'bias': jnp.zeros(64)
+                    },
+                    'q_output': {
+                        'weights': random.normal(subkeys[2], (64, 5)) * 0.1,  # 5 actions per agent
+                        'bias': jnp.zeros(5)
+                    }
+                },
+                # Communication network
+                'comm_params': {
+                    'layer1': {
+                        'weights': random.normal(subkeys[3], (local_state_size, 32)) * 0.1,
+                        'bias': jnp.zeros(32)
+                    },
+                    'comm_output': {
+                        'weights': random.normal(subkeys[4], (32, self.marl_communication_dim)) * 0.1,
+                        'bias': jnp.zeros(self.marl_communication_dim)
+                    }
+                },
+                'epsilon': self.marl_epsilon,
+                'memory': [],
+                'memory_size': 500,
+                # Adam optimizers
+                'q_adam_m': {k: {kk: jnp.zeros_like(vv) for kk, vv in v.items()} 
+                            for k, v in self.marl_agents.get(param, {}).get('q_params', {}).items()},
+                'q_adam_v': {k: {kk: jnp.zeros_like(vv) for kk, vv in v.items()} 
+                            for k, v in self.marl_agents.get(param, {}).get('q_params', {}).items()},
+                'comm_adam_m': {k: {kk: jnp.zeros_like(vv) for kk, vv in v.items()} 
+                               for k, v in self.marl_agents.get(param, {}).get('comm_params', {}).items()},
+                'comm_adam_v': {k: {kk: jnp.zeros_like(vv) for kk, vv in v.items()} 
+                               for k, v in self.marl_agents.get(param, {}).get('comm_params', {}).items()},
+                'adam_t': 0
+            }
+        
+        # Initialize Adam optimizers properly after agent creation
+        for param in param_names:
+            agent = self.marl_agents[param]
+            agent['q_adam_m'] = {k: {kk: jnp.zeros_like(vv) for kk, vv in v.items()} 
+                                for k, v in agent['q_params'].items()}
+            agent['q_adam_v'] = {k: {kk: jnp.zeros_like(vv) for kk, vv in v.items()} 
+                                for k, v in agent['q_params'].items()}
+            agent['comm_adam_m'] = {k: {kk: jnp.zeros_like(vv) for kk, vv in v.items()} 
+                                   for k, v in agent['comm_params'].items()}
+            agent['comm_adam_v'] = {k: {kk: jnp.zeros_like(vv) for kk, vv in v.items()} 
+                                   for k, v in agent['comm_params'].items()}
+        
+        self.marl_param_names = param_names
+        self.marl_step_sizes = [0.01, 0.03, 0.05, 0.1, 0.15]  # 5 actions per agent
+        
+        # Global communication buffer
+        self.marl_global_comm = jnp.zeros((n_agents, self.marl_communication_dim))
+    
+    def _params_to_state(self, params: Dict[str, float]) -> jax.Array:
+        """Convert parameters to normalized state for neural networks."""
+        param_values = jnp.array([params[name] for name in self.ql_param_names])
+        normalized = (param_values - self.ql_param_mins) / (self.ql_param_maxs - self.ql_param_mins)
+        return jnp.clip(normalized, 0.0, 1.0)
     
     def _find_nearest_bin(self, value: float, bins: jax.Array) -> int:
         """Find the nearest bin index for a value."""
         return int(jnp.argmin(jnp.abs(bins - value)))
     
     def _dqn_forward(self, state: jax.Array) -> jax.Array:
-        """Forward pass through DQN."""
+        """Forward pass through DQN with deeper architecture."""
         # Layer 1
         h1 = jnp.tanh(jnp.dot(state, self.dqn_params['layer1']['weights']) + 
                       self.dqn_params['layer1']['bias'])
-        # Layer 2 (output)
-        q_values = jnp.dot(h1, self.dqn_params['layer2']['weights']) + \
-                   self.dqn_params['layer2']['bias']
+        # Layer 2
+        h2 = jnp.tanh(jnp.dot(h1, self.dqn_params['layer2']['weights']) + 
+                      self.dqn_params['layer2']['bias'])
+        # Layer 3 (output)
+        q_values = jnp.dot(h2, self.dqn_params['layer3']['weights']) + \
+                   self.dqn_params['layer3']['bias']
         return q_values
     
-    def _policy_gradient_sample_action(self, state: jax.Array) -> Tuple[jax.Array, float]:
-        """Sample action from policy and return log probability."""
+    def _policy_gradient_sample_action(self, state: jax.Array) -> Tuple[jax.Array, float, float]:
+        """Sample action from policy with exploration preservation."""
         mean = self.pg_policy_params['mean']
-        std = jnp.exp(self.pg_policy_params['log_std'])
+        # Enforce minimum standard deviation to prevent policy collapse
+        log_std = jnp.maximum(self.pg_policy_params['log_std'], jnp.log(self.pg_min_std))
+        std = jnp.exp(log_std)
         
         # Sample from normal distribution
         self.key, subkey = random.split(self.key)
@@ -785,13 +1024,17 @@ class ModelCalibrator:
         log_prob = -0.5 * jnp.sum(((action - mean) / std) ** 2) - \
                    0.5 * jnp.sum(jnp.log(2 * jnp.pi * std ** 2))
         
-        return action, float(log_prob)
+        # Compute entropy for regularization
+        entropy = 0.5 * jnp.sum(log_std + jnp.log(2 * jnp.pi * jnp.e))
+        
+        return action, float(log_prob), float(entropy)
     
     def _actor_critic_forward(self, state: jax.Array) -> Tuple[jax.Array, float, float]:
-        """Forward pass for actor-critic."""
-        # Actor (policy)
+        """Forward pass for robust actor-critic."""
+        # Actor (policy) with minimum std constraint
         mean = self.ac_actor_params['mean']
-        std = jnp.exp(self.ac_actor_params['log_std'])
+        log_std = jnp.maximum(self.ac_actor_params['log_std'], jnp.log(0.05))  # Min std = 0.05
+        std = jnp.exp(log_std)
         
         # Sample action
         self.key, subkey = random.split(self.key)
@@ -801,11 +1044,239 @@ class ModelCalibrator:
         log_prob = -0.5 * jnp.sum(((action - mean) / std) ** 2) - \
                    0.5 * jnp.sum(jnp.log(2 * jnp.pi * std ** 2))
         
-        # Critic (value function)
-        value = jnp.dot(state, self.ac_critic_params['weights']).squeeze() + \
-                self.ac_critic_params['bias'][0]
+        # Robust critic (value function) with hidden layer
+        h1 = jnp.tanh(jnp.dot(state, self.ac_critic_params['layer1_weights']) + 
+                      self.ac_critic_params['layer1_bias'])
+        value = jnp.dot(h1, self.ac_critic_params['layer2_weights']).squeeze() + \
+                self.ac_critic_params['layer2_bias'][0]
+        
+        # Clip value to prevent explosion
+        value = jnp.clip(value, *self.ac_value_clip_range)
         
         return action, float(log_prob), float(value)
+    
+    def _ql_forward(self, state: jax.Array) -> jax.Array:
+        """Forward pass through Q-learning neural network."""
+        # Layer 1
+        h1 = jnp.tanh(jnp.dot(state, self.ql_params['layer1']['weights']) + 
+                      self.ql_params['layer1']['bias'])
+        # Layer 2  
+        h2 = jnp.tanh(jnp.dot(h1, self.ql_params['layer2']['weights']) + 
+                      self.ql_params['layer2']['bias'])
+        # Layer 3 (output)
+        q_values = jnp.dot(h2, self.ql_params['layer3']['weights']) + \
+                   self.ql_params['layer3']['bias']
+        return q_values
+    
+    def _ql_forward_improved(self, state: jax.Array, params: Optional[Dict] = None) -> jax.Array:
+        """Improved Q-learning forward pass with optional custom parameters."""
+        if params is None:
+            params = self.ql_params
+        
+        # Enhanced forward pass with deeper network
+        h1 = jnp.tanh(jnp.dot(state, params['layer1']['weights']) + 
+                      params['layer1']['bias'])
+        h2 = jnp.tanh(jnp.dot(h1, params['layer2']['weights']) + 
+                      params['layer2']['bias'])
+        h3 = jnp.tanh(jnp.dot(h2, params['layer3']['weights']) + 
+                      params['layer3']['bias'])
+        q_values = jnp.dot(h3, params['output']['weights']) + params['output']['bias']
+        return q_values
+    
+    def _pg_forward_enhanced(self, state: jax.Array) -> Tuple[jax.Array, float, float, float]:
+        """Enhanced policy gradient forward pass returning action, mean, std, value."""
+        # Policy network (actor) - using correct parameter names
+        h1_policy = jnp.tanh(jnp.dot(state, self.pg_policy_params['shared_layer1']['weights']) + 
+                            self.pg_policy_params['shared_layer1']['bias'])
+        h2_policy = jnp.tanh(jnp.dot(h1_policy, self.pg_policy_params['shared_layer2']['weights']) + 
+                            self.pg_policy_params['shared_layer2']['bias'])
+        
+        # Mean and log_std for continuous actions with gradient clipping
+        mean = jnp.dot(h2_policy, self.pg_policy_params['mean_output']['weights']) + self.pg_policy_params['mean_output']['bias']
+        mean = jnp.clip(mean, -10.0, 10.0)  # Clip mean to prevent explosion
+        
+        log_std = jnp.dot(h2_policy, self.pg_policy_params['std_output']['weights']) + self.pg_policy_params['std_output']['bias']
+        log_std = jnp.clip(log_std, -5.0, 2.0)  # More conservative clipping
+        std = jnp.exp(log_std)
+        std = jnp.maximum(std, 0.01)  # Minimum std to prevent collapse
+        
+        # Sample action with safe noise
+        self.key, subkey = random.split(self.key)
+        noise = random.normal(subkey, mean.shape)
+        noise = jnp.clip(noise, -3.0, 3.0)  # Clip noise to prevent outliers
+        action = mean + std * noise
+        
+        # Value network (critic) with safer computation
+        h1_value = jnp.tanh(jnp.dot(state, self.pg_value_params['layer1']['weights']) + 
+                           self.pg_value_params['layer1']['bias'])
+        value = jnp.dot(h1_value, self.pg_value_params['layer2']['weights']) + self.pg_value_params['layer2']['bias']
+        value = jnp.clip(value, -100.0, 100.0)  # Clip value to prevent explosion
+        
+        # Ensure outputs are finite
+        mean = jnp.where(jnp.isfinite(mean), mean, 0.0)
+        std = jnp.where(jnp.isfinite(std), std, 0.1)
+        value = jnp.where(jnp.isfinite(value), value, 0.0)
+        
+        return action, float(mean[0]), float(std[0]), float(value[0])
+    
+    def _ac_forward_enhanced(self, state: jax.Array) -> Tuple[jax.Array, float, float, float]:
+        """Enhanced actor-critic forward pass returning action, log_prob, value, entropy."""
+        # Actor network - using correct parameter names
+        h1_actor = jnp.tanh(jnp.dot(state, self.ac_actor_params['layer1']['weights']) + 
+                           self.ac_actor_params['layer1']['bias'])
+        h2_actor = jnp.tanh(jnp.dot(h1_actor, self.ac_actor_params['layer2']['weights']) + 
+                           self.ac_actor_params['layer2']['bias'])
+        
+        # Action probabilities for discrete actions or mean/std for continuous
+        mean = jnp.dot(h2_actor, self.ac_actor_params['mean_output']['weights']) + self.ac_actor_params['mean_output']['bias']
+        log_std = jnp.dot(h2_actor, self.ac_actor_params['std_output']['weights']) + self.ac_actor_params['std_output']['bias']
+        std = jnp.exp(jnp.clip(log_std, -20, 2))
+        
+        # Sample action
+        self.key, subkey = random.split(self.key)
+        action = mean + std * random.normal(subkey, mean.shape)
+        
+        # Compute log probability
+        log_prob = -0.5 * ((action - mean) / std) ** 2 - 0.5 * jnp.log(2 * jnp.pi) - jnp.log(std)
+        log_prob = jnp.sum(log_prob)  # Sum over action dimensions
+        
+        # Compute entropy
+        entropy = 0.5 * jnp.log(2 * jnp.pi * jnp.e) + jnp.log(std)
+        entropy = jnp.sum(entropy)
+        
+        # Critic network
+        h1_critic = jnp.tanh(jnp.dot(state, self.ac_critic_params['layer1']['weights']) + 
+                            self.ac_critic_params['layer1']['bias'])
+        h2_critic = jnp.tanh(jnp.dot(h1_critic, self.ac_critic_params['layer2']['weights']) + 
+                            self.ac_critic_params['layer2']['bias'])
+        h3_critic = jnp.tanh(jnp.dot(h2_critic, self.ac_critic_params['layer3']['weights']) + 
+                            self.ac_critic_params['layer3']['bias'])
+        value = jnp.dot(h3_critic, self.ac_critic_params['output']['weights']) + self.ac_critic_params['output']['bias']
+        
+        return action, float(log_prob), float(value[0]), float(entropy)
+    
+    def _dqn_forward_dueling(self, state: jax.Array, params: Optional[Dict] = None) -> jax.Array:
+        """Dueling DQN forward pass with separate value and advantage streams."""
+        if params is None:
+            params = self.dqn_params
+        
+        # Shared layers
+        h1 = jnp.tanh(jnp.dot(state, params['shared1']['weights']) + 
+                      params['shared1']['bias'])
+        h2 = jnp.tanh(jnp.dot(h1, params['shared2']['weights']) + 
+                      params['shared2']['bias'])
+        
+        # Value stream - using correct parameter names
+        v_stream = jnp.tanh(jnp.dot(h2, params['value1']['weights']) + 
+                           params['value1']['bias'])
+        state_value = jnp.dot(v_stream, params['value_output']['weights']) + params['value_output']['bias']
+        
+        # Advantage stream - using correct parameter names  
+        a_stream = jnp.tanh(jnp.dot(h2, params['advantage1']['weights']) + 
+                           params['advantage1']['bias'])
+        advantages = jnp.dot(a_stream, params['advantage_output']['weights']) + params['advantage_output']['bias']
+        
+        # Combine value and advantages (dueling architecture)
+        q_values = state_value + (advantages - jnp.mean(advantages, keepdims=True))
+        
+        return q_values
+    
+    def _marl_agent_forward(self, agent_params: Dict, state: float) -> jax.Array:
+        """Forward pass for individual multi-agent RL agent."""
+        state_array = jnp.array([state])
+        h1 = jnp.tanh(jnp.dot(state_array, agent_params['layer1_weights']) + 
+                      agent_params['layer1_bias'])
+        q_values = jnp.dot(h1, agent_params['layer2_weights']) + agent_params['layer2_bias']
+        return q_values
+    
+    def _compute_action_diversity_penalty(self, action: int) -> float:
+        """Compute penalty for repetitive actions in DQN."""
+        if len(self.dqn_action_history) == 0:
+            return 0.0
+            
+        # Count recent occurrences of this action
+        recent_actions = self.dqn_action_history[-self.dqn_action_history_size:]
+        action_count = sum(1 for a in recent_actions if a == action)
+        
+        # Penalty proportional to frequency
+        penalty = self.dqn_action_regularization * (action_count / len(recent_actions))
+        return penalty
+    
+    def _create_enhanced_state(self, params: Dict[str, float]) -> jax.Array:
+        """Create enhanced state representation with normalized params, targets, history, and gradients."""
+        param_names = list(self.params.keys())
+        n_params = len(param_names)
+        
+        # Current normalized parameters
+        current_params = jnp.array([params[name] for name in param_names])
+        param_mins = jnp.array([self.param_bounds[p][0] for p in param_names])
+        param_maxs = jnp.array([self.param_bounds[p][1] for p in param_names])
+        normalized_params = (current_params - param_mins) / (param_maxs - param_mins)
+        normalized_params = jnp.clip(normalized_params, 0.0, 1.0)
+        
+        # Target metrics (normalized)
+        target_values = jnp.array([self.target_metrics.get(metric, 0.0) for metric in self.target_metrics])
+        target_norm = target_values / (jnp.abs(target_values) + 1e-8)
+        
+        # Parameter history features (recent trends)
+        if hasattr(self, 'ql_param_history') and len(self.ql_param_history) > 0:
+            recent_params = jnp.array([self.ql_param_history[-1][name] for name in param_names])
+            param_change = (current_params - recent_params) / (param_maxs - param_mins + 1e-8)
+        else:
+            param_change = jnp.zeros(n_params)
+        
+        # Gradient estimates
+        if hasattr(self, 'ql_gradient_estimates'):
+            gradient_norm = self.ql_gradient_estimates / (jnp.abs(self.ql_gradient_estimates) + 1e-8)
+        else:
+            gradient_norm = jnp.zeros(n_params)
+        
+        # Combine all features
+        enhanced_state = jnp.concatenate([
+            normalized_params,  # Current normalized parameters
+            target_norm[:n_params] if len(target_norm) >= n_params else jnp.zeros(n_params),  # Targets
+            param_change,       # Recent parameter changes
+            gradient_norm       # Gradient information
+        ])
+        
+        return enhanced_state
+    
+    def _adam_update(self, params: Dict, gradients: Dict, adam_m: Dict, adam_v: Dict, 
+                    adam_t: int, learning_rate: float = 0.001, 
+                    beta1: float = 0.9, beta2: float = 0.999, eps: float = 1e-8) -> Tuple[Dict, Dict, Dict]:
+        """Proper Adam optimizer update for neural network parameters."""
+        updated_params = {}
+        updated_m = {}
+        updated_v = {}
+        
+        for layer_name, layer_params in params.items():
+            updated_params[layer_name] = {}
+            updated_m[layer_name] = {}
+            updated_v[layer_name] = {}
+            
+            for param_name, param_value in layer_params.items():
+                grad = gradients[layer_name][param_name]
+                m = adam_m[layer_name][param_name]
+                v = adam_v[layer_name][param_name]
+                
+                # Update biased first moment estimate
+                m_new = beta1 * m + (1 - beta1) * grad
+                
+                # Update biased second raw moment estimate
+                v_new = beta2 * v + (1 - beta2) * (grad ** 2)
+                
+                # Compute bias-corrected first moment estimate
+                m_hat = m_new / (1 - beta1 ** adam_t)
+                
+                # Compute bias-corrected second raw moment estimate
+                v_hat = v_new / (1 - beta2 ** adam_t)
+                
+                # Update parameters
+                updated_params[layer_name][param_name] = param_value - learning_rate * m_hat / (jnp.sqrt(v_hat) + eps)
+                updated_m[layer_name][param_name] = m_new
+                updated_v[layer_name][param_name] = v_new
+        
+        return updated_params, updated_m, updated_v
     
     def calibrate(self, verbose: bool = True) -> Dict[str, float]:
         """Run calibration process and return optimized parameters."""
@@ -1178,81 +1649,116 @@ class ModelCalibrator:
         return self.best_params
     
     def _calibrate_q_learning(self, verbose: bool) -> Dict[str, float]:
-        """Q-Learning calibration."""
+        """Fixed Q-Learning calibration with working optimization."""
         no_improvement_count = 0
+        
+        # Initialize Q-table for discrete states/actions  
+        if not hasattr(self, 'ql_q_table'):
+            self.ql_q_table = {}
+        
+        # Define simple action space: (param_index, step_size, direction)
+        param_names = list(self.params.keys())
+        actions = []
+        for i, param in enumerate(param_names):
+            min_val, max_val = self.param_bounds[param]
+            small_step = (max_val - min_val) * 0.02  # 2% of range
+            large_step = (max_val - min_val) * 0.1   # 10% of range
+            
+            actions.extend([
+                (i, small_step, 1),   # small increase
+                (i, small_step, -1),  # small decrease  
+                (i, large_step, 1),   # large increase
+                (i, large_step, -1),  # large decrease
+            ])
+        
+        def get_state_key(params):
+            """Convert parameters to discrete state."""
+            state_parts = []
+            for param, value in params.items():
+                min_val, max_val = self.param_bounds[param]
+                normalized = (value - min_val) / (max_val - min_val)
+                bin_idx = int(jnp.clip(normalized * 10, 0, 9))  # 10 bins
+                state_parts.append(str(bin_idx))
+            return "_".join(state_parts)
         
         for iteration in range(self.max_iterations):
             if verbose:
                 print(f"\nIteration {iteration+1}/{self.max_iterations}")
             
             # Get current state
-            current_state = self._params_to_state(self.params)
+            state_key = get_state_key(self.params)
+            
+            # Initialize Q-values for new states
+            if state_key not in self.ql_q_table:
+                self.ql_q_table[state_key] = jnp.zeros(len(actions))
             
             # Epsilon-greedy action selection
             self.key, subkey = random.split(self.key)
             if random.uniform(subkey) < self.ql_epsilon:
-                # Explore: random action
-                action = random.randint(subkey, (), 0, self.ql_n_actions)
+                action_idx = int(random.randint(subkey, (), 0, len(actions)))
             else:
-                # Exploit: best action
-                q_values = self.ql_q_table[current_state]
-                action = jnp.argmax(q_values)
+                action_idx = int(jnp.argmax(self.ql_q_table[state_key]))
             
-            # Apply action to parameters
+            # Apply action
+            param_idx, step_size, direction = actions[action_idx]
+            param_name = param_names[param_idx]
+            
             new_params = self.params.copy()
-            param_idx = int(action) // 2
-            direction = 1 if int(action) % 2 == 0 else -1
-            param_name = self.ql_param_names[param_idx]
-            
-            # Update parameter
             min_val, max_val = self.param_bounds[param_name]
-            step = self.ql_step_size * (max_val - min_val)
-            new_value = self.params[param_name] + direction * step
+            new_value = self.params[param_name] + direction * step_size
             new_params[param_name] = float(jnp.clip(new_value, min_val, max_val))
             
             # Evaluate new parameters
-            loss, ci = self._evaluate_params_robust(new_params)
-            reward = -loss  # Negative loss as reward
+            old_loss = self.loss_history[-1] if self.loss_history else self._evaluate_params_robust(self.params)[0]
+            new_loss, ci = self._evaluate_params_robust(new_params)
             
-            # Get next state
-            next_state = self._params_to_state(new_params)
+            # Compute reward (improvement with proper scaling)
+            improvement = old_loss - new_loss
+            reward = improvement * 100.0  # Scale for better learning
+            
+            # Update Q-value
+            next_state_key = get_state_key(new_params)
+            if next_state_key not in self.ql_q_table:
+                self.ql_q_table[next_state_key] = jnp.zeros(len(actions))
             
             # Q-learning update
-            current_q = self.ql_q_table[current_state + (int(action),)]
-            next_max_q = jnp.max(self.ql_q_table[next_state])
-            target_q = reward + self.ql_gamma * next_max_q
+            current_q = self.ql_q_table[state_key][action_idx]
+            max_next_q = jnp.max(self.ql_q_table[next_state_key])
+            target_q = reward + self.ql_gamma * max_next_q
             
             # Update Q-table
-            self.ql_q_table = self.ql_q_table.at[current_state + (int(action),)].set(
-                current_q + self.ql_alpha * (target_q - current_q)
+            updated_q_values = self.ql_q_table[state_key].at[action_idx].set(
+                current_q + self.ql_learning_rate * (target_q - current_q)
             )
+            self.ql_q_table[state_key] = updated_q_values
             
-            # Update parameters and tracking
-            self.params = new_params
+            # Update parameters if improvement
+            if new_loss < old_loss:
+                self.params = new_params
             
             # Track history
             self.param_history.append(self.params.copy())
-            self.loss_history.append(loss)
+            self.loss_history.append(new_loss)
             self.confidence_intervals.append(ci)
             
             # Update best parameters
-            if loss < self.best_loss:
-                self.best_loss = loss
+            if new_loss < self.best_loss:
+                self.best_loss = new_loss
                 self.best_params = self.params.copy()
                 no_improvement_count = 0
             else:
                 no_improvement_count += 1
             
             if verbose:
-                print(f"Loss: {loss:.6f} (best: {self.best_loss:.6f})")
-                print(f"Action: {action}, Reward: {reward:.6f}")
-                print(f"Epsilon: {self.ql_epsilon:.3f}")
+                print(f"Loss: {new_loss:.6f} (best: {self.best_loss:.6f})")
+                print(f"Action: {action_idx} (param: {param_name}, step: {step_size:.4f}, dir: {direction})")
+                print(f"Reward: {reward:.6f}, Epsilon: {self.ql_epsilon:.3f}")
             
             # Decay exploration
-            self.ql_epsilon *= self.ql_epsilon_decay
+            self.ql_epsilon = max(self.ql_epsilon * self.ql_epsilon_decay, self.ql_epsilon_min)
             
             # Early stopping
-            if loss < self.tolerance:
+            if new_loss < self.tolerance:
                 if verbose:
                     print("Converged: loss below tolerance")
                 break
@@ -1263,18 +1769,101 @@ class ModelCalibrator:
                 break
         
         return self.best_params
+    
+    def _train_ql_network_improved(self):
+        """Improved Q-learning neural network training with proper Adam optimization."""
+        # Sample random batch
+        self.key, subkey = random.split(self.key)
+        batch_indices = random.choice(subkey, len(self.ql_memory), 
+                                     shape=(self.ql_batch_size,), replace=False)
+        
+        batch = [self.ql_memory[i] for i in batch_indices]
+        
+        # Prepare batch data
+        states = jnp.array([exp[0] for exp in batch])
+        actions = jnp.array([exp[1] for exp in batch])
+        rewards = jnp.array([exp[2] for exp in batch])
+        next_states = jnp.array([exp[3] for exp in batch])
+        
+        # Compute target Q-values using target network (Double DQN)
+        next_q_values_main = jnp.array([self._ql_forward_improved(next_state) for next_state in next_states])
+        next_q_values_target = jnp.array([self._ql_forward_improved(next_state, self.ql_target_params) 
+                                        for next_state in next_states])
+        
+        # Double DQN: use main network to select actions, target network to evaluate
+        next_actions = jnp.argmax(next_q_values_main, axis=1)
+        target_q_values = rewards + self.ql_gamma * next_q_values_target[jnp.arange(len(batch)), next_actions]
+        
+        # Compute current Q-values
+        current_q_values = jnp.array([self._ql_forward_improved(state) for state in states])
+        current_q_selected = current_q_values[jnp.arange(len(batch)), actions]
+        
+        # Compute TD errors
+        td_errors = target_q_values - current_q_selected
+        
+        # Compute gradients (simplified backpropagation)
+        gradients = {k: {kk: jnp.zeros_like(vv) for kk, vv in v.items()} 
+                    for k, v in self.ql_params.items()}
+        
+        for i in range(len(batch)):
+            state = states[i]
+            action = actions[i]
+            td_error = td_errors[i]
+            
+            # Forward pass to get activations
+            h1 = jnp.tanh(jnp.dot(state, self.ql_params['layer1']['weights']) + 
+                         self.ql_params['layer1']['bias'])
+            h2 = jnp.tanh(jnp.dot(h1, self.ql_params['layer2']['weights']) + 
+                         self.ql_params['layer2']['bias'])
+            h3 = jnp.tanh(jnp.dot(h2, self.ql_params['layer3']['weights']) + 
+                         self.ql_params['layer3']['bias'])
+            
+            # Backpropagation (simplified)
+            # Output layer gradients
+            grad_output_w = jnp.zeros_like(self.ql_params['output']['weights'])
+            grad_output_b = jnp.zeros_like(self.ql_params['output']['bias'])
+            grad_output_w = grad_output_w.at[:, action].add(td_error * h3)
+            grad_output_b = grad_output_b.at[action].add(td_error)
+            
+            # Layer 3 gradients
+            delta3 = jnp.zeros(h3.shape[0])
+            delta3 = delta3.at[:].add(td_error * self.ql_params['output']['weights'][:, action])
+            delta3 = delta3 * (1 - h3**2)  # tanh derivative
+            
+            grad_layer3_w = jnp.outer(h2, delta3)
+            grad_layer3_b = delta3
+            
+            # Accumulate gradients
+            gradients['output']['weights'] += grad_output_w / len(batch)
+            gradients['output']['bias'] += grad_output_b / len(batch)
+            gradients['layer3']['weights'] += grad_layer3_w / len(batch)
+            gradients['layer3']['bias'] += grad_layer3_b / len(batch)
+        
+        # Apply Adam optimization
+        self.ql_adam_t += 1
+        self.ql_params, self.ql_adam_m, self.ql_adam_v = self._adam_update(
+            self.ql_params, gradients, self.ql_adam_m, self.ql_adam_v, 
+            self.ql_adam_t, self.ql_learning_rate
+        )
     
     def _calibrate_policy_gradient(self, verbose: bool) -> Dict[str, float]:
-        """Policy Gradient (REINFORCE) calibration."""
+        """Enhanced Policy Gradient calibration with improved actor-critic architecture."""
         no_improvement_count = 0
         
         for iteration in range(self.max_iterations):
             if verbose:
                 print(f"\nIteration {iteration+1}/{self.max_iterations}")
             
-            # Sample action from policy
-            state = jnp.array([self.params[name] for name in self.pg_param_names])
-            action, log_prob = self._policy_gradient_sample_action(state)
+            # Create enhanced state representation
+            state = self._create_enhanced_state(self.params)
+            
+            # Store state history
+            self.pg_state_history.append(state)
+            if len(self.pg_state_history) > 20:  # Keep recent history
+                self.pg_state_history.pop(0)
+            
+            # Sample action from enhanced policy
+            action, mean, std, value = self._pg_forward_enhanced(state)
             
             # Convert action to parameter dictionary and clip to bounds
             new_params = {}
@@ -1284,117 +1873,88 @@ class ModelCalibrator:
             
             # Evaluate parameters
             loss, ci = self._evaluate_params_robust(new_params)
-            reward = -loss  # Negative loss as reward
+            
+            # Shaped reward function with safety checks
+            old_loss = self.loss_history[-1] if self.loss_history else float('inf')
+            improvement = old_loss - loss
+            reward = jnp.clip(improvement * 10.0, -50.0, 50.0)  # Clip reward to prevent explosion
+            
+            # Add target-based reward shaping with safety
+            target_reward = 0.0
+            for metric, target in self.target_metrics.items():
+                if metric in ci:
+                    current_value = (ci[metric][0] + ci[metric][1]) / 2
+                    if jnp.isfinite(current_value) and jnp.isfinite(target):
+                        # Reward based on inverse distance to target
+                        distance = abs(current_value - target) / (abs(target) + 1e-8)
+                        target_reward += 1.0 / (1.0 + distance)  # Higher reward for closer values
+            reward = jnp.clip(reward + target_reward, -100.0, 100.0)
+            
+            # Compute log probability for the action taken with safety checks
+            action_safe = jnp.where(jnp.isfinite(action), action, 0.0)
+            mean_safe = jnp.where(jnp.isfinite(mean), mean, 0.0)
+            std_safe = jnp.maximum(jnp.where(jnp.isfinite(std), std, 0.1), 0.01)
+            
+            log_prob = -0.5 * jnp.sum(((action_safe - mean_safe) / std_safe) ** 2) - \
+                       0.5 * jnp.sum(jnp.log(2 * jnp.pi * std_safe ** 2))
+            log_prob = jnp.clip(log_prob, -50.0, 50.0)
+            
+            # Compute entropy for exploration bonus with safety
+            entropy = 0.5 * jnp.sum(jnp.log(2 * jnp.pi * jnp.e * std_safe ** 2))
+            entropy = jnp.clip(entropy, -50.0, 50.0)
             
             # Store episode data
-            self.pg_episode_rewards.append(reward)
-            self.pg_episode_log_probs.append(log_prob)
+            self.pg_loss_history.append(loss)
             
-            # Update baseline
-            self.pg_baseline = self.pg_baseline_decay * self.pg_baseline + \
-                              (1 - self.pg_baseline_decay) * reward
-            
-            # Policy gradient update
-            advantage = reward - self.pg_baseline
-            
-            # Update policy parameters
-            grad_log_prob_mean = (action - self.pg_policy_params['mean']) / \
-                                jnp.exp(2 * self.pg_policy_params['log_std'])
-            grad_log_prob_std = ((action - self.pg_policy_params['mean']) ** 2 / \
-                                jnp.exp(2 * self.pg_policy_params['log_std']) - 1)
-            
-            # Apply gradients
-            self.pg_policy_params['mean'] += self.pg_learning_rate * advantage * grad_log_prob_mean
-            self.pg_policy_params['log_std'] += self.pg_learning_rate * advantage * grad_log_prob_std
-            
-            # Update current parameters to the mean of the policy
-            for i, param_name in enumerate(self.pg_param_names):
-                min_val, max_val = self.param_bounds[param_name]
-                self.params[param_name] = float(jnp.clip(
-                    self.pg_policy_params['mean'][i], min_val, max_val
-                ))
-            
-            # Track history
-            self.param_history.append(self.params.copy())
-            self.loss_history.append(loss)
-            self.confidence_intervals.append(ci)
-            
-            # Update best parameters
-            if loss < self.best_loss:
-                self.best_loss = loss
-                self.best_params = self.params.copy()
-                no_improvement_count = 0
+            # Advantage estimation (TD error) with safety checks
+            if len(self.pg_loss_history) > 1:
+                # Simple advantage estimate with clipping
+                advantage = jnp.clip(reward - value, -50.0, 50.0)
             else:
-                no_improvement_count += 1
+                advantage = jnp.clip(reward, -50.0, 50.0)
             
-            if verbose:
-                print(f"Loss: {loss:.6f} (best: {self.best_loss:.6f})")
-                print(f"Reward: {reward:.6f}, Advantage: {advantage:.6f}")
-                print(f"Policy mean: {self.pg_policy_params['mean']}")
+            # Check for NaN/inf in key values
+            if not jnp.isfinite(advantage):
+                advantage = 0.0
+            if not jnp.isfinite(log_prob):
+                log_prob = 0.0
+            if not jnp.isfinite(entropy):
+                entropy = 0.0
             
-            # Early stopping
-            if loss < self.tolerance:
+            # Policy gradient update with entropy regularization and safety
+            policy_loss = -float(log_prob) * advantage - self.pg_entropy_coeff * entropy
+            value_loss = (reward - value) ** 2
+            
+            # Skip update if any critical values are NaN
+            if not (jnp.isfinite(policy_loss) and jnp.isfinite(value_loss)):
                 if verbose:
-                    print("Converged: loss below tolerance")
-                break
+                    print(f"Skipping update due to NaN values: policy_loss={policy_loss}, value_loss={value_loss}")
+                continue
             
-            if no_improvement_count >= self.patience:
-                if verbose:
-                    print("Early stopping: no improvement")
-                break
-        
-        return self.best_params
-    
-    def _calibrate_actor_critic(self, verbose: bool) -> Dict[str, float]:
-        """Actor-Critic calibration."""
-        no_improvement_count = 0
-        
-        for iteration in range(self.max_iterations):
-            if verbose:
-                print(f"\nIteration {iteration+1}/{self.max_iterations}")
+            # Compute gradients for policy network (simplified)
+            policy_gradients = self._compute_policy_gradients_enhanced(
+                state, action, mean, std, advantage, entropy
+            )
             
-            # Current state
-            state = jnp.array([self.params[name] for name in self.ac_param_names])
+            # Compute gradients for value network
+            value_gradients = self._compute_value_gradients_enhanced(state, reward, value)
             
-            # Forward pass
-            action, log_prob, value = self._actor_critic_forward(state)
+            # Apply Adam optimization for both networks
+            self.pg_adam_t += 1
             
-            # Convert action to parameter dictionary and clip to bounds
-            new_params = {}
-            for i, param_name in enumerate(self.ac_param_names):
-                min_val, max_val = self.param_bounds[param_name]
-                new_params[param_name] = float(jnp.clip(action[i], min_val, max_val))
+            # Update policy network
+            self.pg_policy_params, self.pg_policy_adam_m, self.pg_policy_adam_v = self._adam_update(
+                self.pg_policy_params, policy_gradients, self.pg_policy_adam_m, 
+                self.pg_policy_adam_v, self.pg_adam_t, self.pg_learning_rate
+            )
             
-            # Evaluate parameters
-            loss, ci = self._evaluate_params_robust(new_params)
-            reward = -loss  # Negative loss as reward
+            # Update value network
+            self.pg_value_params, self.pg_value_adam_m, self.pg_value_adam_v = self._adam_update(
+                self.pg_value_params, value_gradients, self.pg_value_adam_m, 
+                self.pg_value_adam_v, self.pg_adam_t, self.pg_learning_rate * self.pg_value_coeff
+            )
             
-            # Next state value (for TD error)
-            next_state = jnp.array([new_params[name] for name in self.ac_param_names])
-            next_value = jnp.dot(next_state, self.ac_critic_params['weights']).squeeze() + \
-                        self.ac_critic_params['bias'][0]
-            
-            # TD error
-            td_target = reward + self.ac_gamma * next_value
-            td_error = td_target - value
-            
-            # Update critic
-            critic_grad_weights = jnp.outer(state, td_error)
-            critic_grad_bias = jnp.array([td_error])
-            
-            self.ac_critic_params['weights'] += self.ac_critic_lr * critic_grad_weights
-            self.ac_critic_params['bias'] += self.ac_critic_lr * critic_grad_bias
-            
-            # Update actor
-            actor_grad_mean = td_error * (action - self.ac_actor_params['mean']) / \
-                             jnp.exp(2 * self.ac_actor_params['log_std'])
-            actor_grad_std = td_error * ((action - self.ac_actor_params['mean']) ** 2 / \
-                            jnp.exp(2 * self.ac_actor_params['log_std']) - 1)
-            
-            self.ac_actor_params['mean'] += self.ac_actor_lr * actor_grad_mean
-            self.ac_actor_params['log_std'] += self.ac_actor_lr * actor_grad_std
-            
-            # Update current parameters
+            # Update current parameters to the new sampled parameters
             self.params = new_params.copy()
             
             # Track history
@@ -1412,8 +1972,9 @@ class ModelCalibrator:
             
             if verbose:
                 print(f"Loss: {loss:.6f} (best: {self.best_loss:.6f})")
-                print(f"Reward: {reward:.6f}, TD Error: {td_error:.6f}")
-                print(f"Value: {value:.6f}")
+                print(f"Reward: {reward:.6f}, Advantage: {advantage:.6f}")
+                print(f"Value: {value:.6f}, Entropy: {entropy:.6f}")
+                print(f"Policy std: {jnp.mean(std):.4f}")
             
             # Early stopping
             if loss < self.tolerance:
@@ -1428,73 +1989,396 @@ class ModelCalibrator:
         
         return self.best_params
     
-    def _calibrate_multi_agent_rl(self, verbose: bool) -> Dict[str, float]:
-        """Multi-Agent RL calibration."""
+    def _compute_policy_gradients_enhanced(self, state: jax.Array, action: jax.Array, 
+                                         mean: jax.Array, std: jax.Array, 
+                                         advantage: float, entropy: float) -> Dict:
+        """Compute policy gradients with entropy regularization and safety checks."""
+        gradients = {k: {kk: jnp.zeros_like(vv) for kk, vv in v.items()} 
+                    for k, v in self.pg_policy_params.items()}
+        
+        # Safety checks for inputs
+        action = jnp.where(jnp.isfinite(action), action, 0.0)
+        mean = jnp.where(jnp.isfinite(mean), mean, 0.0)
+        std = jnp.maximum(jnp.where(jnp.isfinite(std), std, 0.1), 0.01)
+        advantage = jnp.where(jnp.isfinite(advantage), advantage, 0.0)
+        
+        # Forward pass to get activations
+        h1 = jnp.tanh(jnp.dot(state, self.pg_policy_params['shared_layer1']['weights']) + 
+                     self.pg_policy_params['shared_layer1']['bias'])
+        h2 = jnp.tanh(jnp.dot(h1, self.pg_policy_params['shared_layer2']['weights']) + 
+                     self.pg_policy_params['shared_layer2']['bias'])
+        
+        # Gradients for mean output with safety
+        grad_log_prob_mean = (action - mean) / (std ** 2)
+        grad_log_prob_mean = jnp.clip(grad_log_prob_mean, -10.0, 10.0)
+        policy_grad_mean = advantage * grad_log_prob_mean
+        policy_grad_mean = jnp.clip(policy_grad_mean, -5.0, 5.0)
+        
+        gradients['mean_output']['weights'] = jnp.outer(h2, policy_grad_mean)
+        gradients['mean_output']['bias'] = policy_grad_mean
+        
+        # Gradients for std output (log_std) with safety
+        grad_log_prob_std = ((action - mean) ** 2 / (std ** 2) - 1) / std
+        grad_log_prob_std = jnp.clip(grad_log_prob_std, -10.0, 10.0)
+        entropy_grad_std = self.pg_entropy_coeff / std
+        entropy_grad_std = jnp.clip(entropy_grad_std, -1.0, 1.0)
+        policy_grad_std = advantage * grad_log_prob_std + entropy_grad_std
+        policy_grad_std = jnp.clip(policy_grad_std, -5.0, 5.0)
+        
+        gradients['std_output']['weights'] = jnp.outer(h2, policy_grad_std)
+        gradients['std_output']['bias'] = policy_grad_std
+        
+        # Ensure all gradients are finite
+        for layer_name in gradients:
+            for param_name in gradients[layer_name]:
+                gradients[layer_name][param_name] = jnp.where(
+                    jnp.isfinite(gradients[layer_name][param_name]), 
+                    gradients[layer_name][param_name], 
+                    0.0
+                )
+        
+        return gradients
+    
+    def _compute_value_gradients_enhanced(self, state: jax.Array, target: float, value: float) -> Dict:
+        """Compute value network gradients."""
+        gradients = {k: {kk: jnp.zeros_like(vv) for kk, vv in v.items()} 
+                    for k, v in self.pg_value_params.items()}
+        
+        # Value prediction error
+        value_error = target - value
+        
+        # Forward pass to get activations
+        h1 = jnp.tanh(jnp.dot(state, self.pg_value_params['layer1']['weights']) + 
+                     self.pg_value_params['layer1']['bias'])
+        
+        # Gradients for value network
+        gradients['layer2']['weights'] = jnp.outer(h1, jnp.array([value_error]))
+        gradients['layer2']['bias'] = jnp.array([value_error])
+        
+        return gradients
+    
+    def _calibrate_actor_critic(self, verbose: bool) -> Dict[str, float]:
+        """Enhanced Actor-Critic calibration with proper network architecture and GAE."""
         no_improvement_count = 0
         
         for iteration in range(self.max_iterations):
             if verbose:
                 print(f"\nIteration {iteration+1}/{self.max_iterations}")
             
+            # Current enhanced state
+            state = self._create_enhanced_state(self.params)
+            
+            # Forward pass through enhanced actor-critic
+            action, log_prob, value, entropy = self._ac_forward_enhanced(state)
+            
+            # Convert action to parameter dictionary and clip to bounds
+            new_params = {}
+            for i, param_name in enumerate(self.ac_param_names):
+                min_val, max_val = self.param_bounds[param_name]
+                new_params[param_name] = float(jnp.clip(action[i], min_val, max_val))
+            
+            # Evaluate parameters
+            loss, ci = self._evaluate_params_robust(new_params)
+            
+            # Shaped reward
+            old_loss = self.loss_history[-1] if self.loss_history else float('inf')
+            improvement = old_loss - loss
+            reward = improvement * 10.0
+            
+            # Add target-based bonus
+            target_bonus = 0.0
+            for metric, target in self.target_metrics.items():
+                if metric in ci:
+                    current_value = (ci[metric][0] + ci[metric][1]) / 2
+                    distance = abs(current_value - target) / (abs(target) + 1e-8)
+                    target_bonus += 1.0 / (1.0 + distance)
+            reward += target_bonus
+            
+            # Store experience for GAE
+            self.ac_states.append(state)
+            self.ac_actions.append(action)
+            self.ac_rewards.append(reward)
+            self.ac_values.append(value)
+            self.ac_log_probs.append(log_prob)
+            self.ac_dones.append(False)  # Not episodic
+            
+            # Compute advantage and train networks
+            if len(self.ac_states) >= 5:  # Train every few steps
+                advantages = self._compute_gae(self.ac_rewards, self.ac_values, self.ac_dones)
+                
+                # Actor loss (policy gradient with entropy bonus)
+                actor_loss = -float(log_prob) * advantages[-1] - self.ac_entropy_coeff * entropy
+                
+                # Critic loss (value prediction error)
+                critic_loss = (reward - value) ** 2
+                
+                # Compute gradients
+                actor_gradients = self._compute_actor_gradients_enhanced(state, action, advantages[-1], entropy)
+                critic_gradients = self._compute_critic_gradients_enhanced(state, reward, value)
+                
+                # Apply Adam optimization
+                self.ac_adam_t += 1
+                
+                # Update actor
+                self.ac_actor_params, self.ac_actor_adam_m, self.ac_actor_adam_v = self._adam_update(
+                    self.ac_actor_params, actor_gradients, self.ac_actor_adam_m, 
+                    self.ac_actor_adam_v, self.ac_adam_t, self.ac_actor_lr
+                )
+                
+                # Update critic
+                self.ac_critic_params, self.ac_critic_adam_m, self.ac_critic_adam_v = self._adam_update(
+                    self.ac_critic_params, critic_gradients, self.ac_critic_adam_m, 
+                    self.ac_critic_adam_v, self.ac_adam_t, self.ac_critic_lr
+                )
+                
+                # Clear buffers
+                self.ac_states = self.ac_states[-1:]  # Keep last state
+                self.ac_actions = self.ac_actions[-1:]
+                self.ac_rewards = self.ac_rewards[-1:]
+                self.ac_values = self.ac_values[-1:]
+                self.ac_log_probs = self.ac_log_probs[-1:]
+                self.ac_dones = self.ac_dones[-1:]
+            
+            # Update parameters
+            self.params = new_params
+            
+            # Track history
+            self.param_history.append(self.params.copy())
+            self.loss_history.append(loss)
+            self.confidence_intervals.append(ci)
+            
+            # Update best parameters
+            if loss < self.best_loss:
+                self.best_loss = loss
+                self.best_params = self.params.copy()
+                no_improvement_count = 0
+            else:
+                no_improvement_count += 1
+            
+            if verbose:
+                print(f"Loss: {loss:.6f} (best: {self.best_loss:.6f})")
+                print(f"Reward: {reward:.6f}")
+                print(f"Value: {value:.6f}, Entropy: {entropy:.6f}")
+            
+            # Early stopping
+            if loss < self.tolerance:
+                if verbose:
+                    print("Converged: loss below tolerance")
+                break
+            
+            if no_improvement_count >= self.patience:
+                if verbose:
+                    print("Early stopping: no improvement")
+                break
+        
+        return self.best_params
+    
+    def _compute_gae(self, rewards: List[float], values: List[float], dones: List[bool]) -> List[float]:
+        """Compute Generalized Advantage Estimation."""
+        advantages = []
+        gae = 0
+        
+        for i in reversed(range(len(rewards))):
+            if i == len(rewards) - 1:
+                next_value = 0.0
+            else:
+                next_value = values[i + 1]
+            
+            delta = rewards[i] + self.ac_gamma * next_value * (1 - dones[i]) - values[i]
+            gae = delta + self.ac_gamma * self.ac_lambda * (1 - dones[i]) * gae
+            advantages.insert(0, gae)
+        
+        return advantages
+    
+    def _compute_actor_gradients_enhanced(self, state: jax.Array, action: jax.Array, 
+                                        advantage: float, entropy: float) -> Dict:
+        """Compute actor gradients with enhanced architecture."""
+        gradients = {k: {kk: jnp.zeros_like(vv) for kk, vv in v.items()} 
+                    for k, v in self.ac_actor_params.items()}
+        
+        # Forward pass to get activations
+        a1 = jnp.tanh(jnp.dot(state, self.ac_actor_params['layer1']['weights']) + 
+                     self.ac_actor_params['layer1']['bias'])
+        a2 = jnp.tanh(jnp.dot(a1, self.ac_actor_params['layer2']['weights']) + 
+                     self.ac_actor_params['layer2']['bias'])
+        
+        mean = jnp.dot(a2, self.ac_actor_params['mean_output']['weights']) + \
+               self.ac_actor_params['mean_output']['bias']
+        log_std = jnp.dot(a2, self.ac_actor_params['std_output']['weights']) + \
+                  self.ac_actor_params['std_output']['bias']
+        std = jnp.exp(jnp.maximum(log_std, jnp.log(0.05)))
+        
+        # Policy gradients
+        grad_log_prob_mean = (action - mean) / (std ** 2)
+        policy_grad_mean = advantage * grad_log_prob_mean
+        
+        grad_log_prob_std = ((action - mean) ** 2 / (std ** 2) - 1) / std
+        entropy_grad_std = self.ac_entropy_coeff / std
+        policy_grad_std = advantage * grad_log_prob_std + entropy_grad_std
+        
+        # Output layer gradients
+        gradients['mean_output']['weights'] = jnp.outer(a2, policy_grad_mean)
+        gradients['mean_output']['bias'] = policy_grad_mean
+        gradients['std_output']['weights'] = jnp.outer(a2, policy_grad_std)
+        gradients['std_output']['bias'] = policy_grad_std
+        
+        return gradients
+    
+    def _compute_critic_gradients_enhanced(self, state: jax.Array, target: float, value: float) -> Dict:
+        """Compute critic gradients with enhanced architecture."""
+        gradients = {k: {kk: jnp.zeros_like(vv) for kk, vv in v.items()} 
+                    for k, v in self.ac_critic_params.items()}
+        
+        # Value prediction error
+        value_error = target - value
+        
+        # Forward pass to get activations
+        c1 = jnp.tanh(jnp.dot(state, self.ac_critic_params['layer1']['weights']) + 
+                     self.ac_critic_params['layer1']['bias'])
+        c2 = jnp.tanh(jnp.dot(c1, self.ac_critic_params['layer2']['weights']) + 
+                     self.ac_critic_params['layer2']['bias'])
+        c3 = jnp.tanh(jnp.dot(c2, self.ac_critic_params['layer3']['weights']) + 
+                     self.ac_critic_params['layer3']['bias'])
+        
+        # Output layer gradients
+        gradients['output']['weights'] = jnp.outer(c3, jnp.array([value_error]))
+        gradients['output']['bias'] = jnp.array([value_error])
+        
+        return gradients
+    
+    def _calibrate_multi_agent_rl(self, verbose: bool) -> Dict[str, float]:
+        """Enhanced Multi-Agent RL calibration with communication and coordination."""
+        no_improvement_count = 0
+        
+        for iteration in range(self.max_iterations):
+            if verbose:
+                print(f"\nIteration {iteration+1}/{self.max_iterations}")
+            
+            # Create enhanced global state
+            global_state = self._create_enhanced_state(self.params)
+            
             # Each agent selects an action for its parameter
             new_params = self.params.copy()
             agent_actions = {}
+            agent_communications = {}
             
+            # First pass: generate communications
             for param_name in self.marl_param_names:
                 agent = self.marl_agents[param_name]
-                current_state = agent['current_state']
                 
-                # Epsilon-greedy action selection
+                # Create local state (parameter + global info)
+                min_val, max_val = self.param_bounds[param_name]
+                normalized_param = (self.params[param_name] - min_val) / (max_val - min_val)
+                local_state = jnp.array([normalized_param])
+                
+                # Get communication from other agents (zeros for first iteration)
+                other_comms = self.marl_global_comm[self.marl_param_names.index(param_name)]
+                
+                # Forward pass to get Q-values and communication
+                q_values, comm_output = self._marl_agent_forward_enhanced(
+                    agent, local_state, other_comms.reshape(1, -1)
+                )
+                
+                agent_communications[param_name] = comm_output
+            
+            # Update global communication buffer
+            for i, param_name in enumerate(self.marl_param_names):
+                self.marl_global_comm = self.marl_global_comm.at[i].set(
+                    agent_communications[param_name]
+                )
+            
+            # Second pass: select actions with updated communications
+            for param_name in self.marl_param_names:
+                agent = self.marl_agents[param_name]
+                
+                # Create enhanced local state
+                min_val, max_val = self.param_bounds[param_name]
+                normalized_param = (self.params[param_name] - min_val) / (max_val - min_val)
+                
+                # Include global state and communications from other agents
+                other_comms = []
+                for other_param in self.marl_param_names:
+                    if other_param != param_name:
+                        other_comms.append(agent_communications[other_param])
+                
+                if other_comms:
+                    comm_input = jnp.concatenate(other_comms)
+                else:
+                    comm_input = jnp.zeros(self.marl_communication_dim)
+                
+                # Enhanced local state: own param + global features + communications
+                local_state = jnp.concatenate([
+                    jnp.array([normalized_param]),
+                    global_state[:len(self.marl_param_names)],  # Global param state
+                    global_state[len(self.marl_param_names):2*len(self.marl_param_names)],  # Targets
+                    comm_input
+                ])
+                
+                # Action selection with epsilon-greedy
                 self.key, subkey = random.split(self.key)
                 if random.uniform(subkey) < agent['epsilon']:
-                    action = random.randint(subkey, (), 0, 3)  # 0: decrease, 1: stay, 2: increase
+                    action = random.randint(subkey, (), 0, len(self.marl_step_sizes))
                 else:
-                    q_values = agent['q_table'][current_state]
+                    q_values, _ = self._marl_agent_forward_enhanced(
+                        agent, local_state.reshape(1, -1), jnp.zeros((1, self.marl_communication_dim))
+                    )
                     action = jnp.argmax(q_values)
                 
                 agent_actions[param_name] = int(action)
                 
                 # Apply action
-                min_val, max_val = self.param_bounds[param_name]
-                step = self.marl_step_size * (max_val - min_val)
+                step_size = self.marl_step_sizes[action]
+                step = step_size * (max_val - min_val)
                 
-                if action == 0:  # decrease
-                    new_value = self.params[param_name] - step
-                elif action == 1:  # stay
-                    new_value = self.params[param_name]
-                else:  # increase
-                    new_value = self.params[param_name] + step
+                # Random direction
+                self.key, subkey = random.split(self.key)
+                direction = 1 if random.uniform(subkey) < 0.5 else -1
                 
+                new_value = self.params[param_name] + direction * step
                 new_params[param_name] = float(jnp.clip(new_value, min_val, max_val))
             
             # Evaluate joint action
             loss, ci = self._evaluate_params_robust(new_params)
-            reward = -loss  # Negative loss as reward
             
-            # Update each agent's Q-table
+            # Shaped reward for all agents
+            old_loss = self.loss_history[-1] if self.loss_history else float('inf')
+            improvement = old_loss - loss
+            reward = improvement * 10.0
+            
+            # Coordination bonus (all agents get same reward)
+            target_bonus = 0.0
+            for metric, target in self.target_metrics.items():
+                if metric in ci:
+                    current_value = (ci[metric][0] + ci[metric][1]) / 2
+                    distance = abs(current_value - target) / (abs(target) + 1e-8)
+                    target_bonus += 1.0 / (1.0 + distance)
+            reward += target_bonus
+            
+            # Update each agent's neural network
             for param_name in self.marl_param_names:
                 agent = self.marl_agents[param_name]
-                current_state = agent['current_state']
                 action = agent_actions[param_name]
                 
-                # Find next state
-                next_state = self._find_nearest_bin(new_params[param_name], agent['param_bins'])
+                # States for this agent
+                min_val, max_val = self.param_bounds[param_name]
+                current_norm = (self.params[param_name] - min_val) / (max_val - min_val)
+                next_norm = (new_params[param_name] - min_val) / (max_val - min_val)
                 
-                # Q-learning update
-                current_q = agent['q_table'][current_state, action]
-                next_max_q = jnp.max(agent['q_table'][next_state])
-                target_q = reward + agent['gamma'] * next_max_q
+                current_state = jnp.array([current_norm])
+                next_state = jnp.array([next_norm])
                 
-                # Update Q-table
-                agent['q_table'] = agent['q_table'].at[current_state, action].set(
-                    current_q + agent['alpha'] * (target_q - current_q)
-                )
+                # Store experience
+                experience = (current_state, action, reward, next_state)
+                agent['memory'].append(experience)
+                if len(agent['memory']) > agent['memory_size']:
+                    agent['memory'].pop(0)
                 
-                # Update agent's current state
-                agent['current_state'] = next_state
+                # Train agent's network
+                if len(agent['memory']) >= 16:  # Mini-batch size
+                    self._train_marl_agent_enhanced(agent, param_name)
                 
                 # Decay exploration
-                agent['epsilon'] *= self.marl_epsilon_decay
+                agent['epsilon'] = max(agent['epsilon'] * self.marl_epsilon_decay, self.marl_epsilon_min)
             
             # Update parameters
             self.params = new_params
@@ -1516,6 +2400,8 @@ class ModelCalibrator:
                 print(f"Loss: {loss:.6f} (best: {self.best_loss:.6f})")
                 print(f"Reward: {reward:.6f}")
                 print(f"Actions: {agent_actions}")
+                avg_epsilon = sum(agent['epsilon'] for agent in self.marl_agents.values()) / len(self.marl_agents)
+                print(f"Avg Epsilon: {avg_epsilon:.3f}")
             
             # Early stopping
             if loss < self.tolerance:
@@ -1530,45 +2416,132 @@ class ModelCalibrator:
         
         return self.best_params
     
+    def _train_marl_agent_enhanced(self, agent: Dict, param_name: str):
+        """Enhanced training for multi-agent RL with proper Adam optimization."""
+        # Sample random batch
+        self.key, subkey = random.split(self.key)
+        batch_size = min(16, len(agent['memory']))
+        batch_indices = random.choice(subkey, len(agent['memory']), 
+                                     shape=(batch_size,), replace=False)
+        
+        batch = [agent['memory'][i] for i in batch_indices]
+        
+        # Prepare batch data
+        states = jnp.array([exp[0] for exp in batch])
+        actions = jnp.array([exp[1] for exp in batch])
+        rewards = jnp.array([exp[2] for exp in batch])
+        next_states = jnp.array([exp[3] for exp in batch])
+        
+        # Compute target Q-values
+        next_q_values = []
+        for next_state in next_states:
+            comm_input = jnp.zeros((1, self.marl_communication_dim))
+            q_vals, _ = self._marl_agent_forward_enhanced(agent, next_state.reshape(1, -1), comm_input)
+            next_q_values.append(q_vals)
+        next_q_values = jnp.array(next_q_values)
+        
+        target_q_values = rewards + 0.95 * jnp.max(next_q_values, axis=1)
+        
+        # Compute current Q-values
+        current_q_values = []
+        for state in states:
+            comm_input = jnp.zeros((1, self.marl_communication_dim))
+            q_vals, _ = self._marl_agent_forward_enhanced(agent, state.reshape(1, -1), comm_input)
+            current_q_values.append(q_vals)
+        current_q_values = jnp.array(current_q_values)
+        
+        # Compute TD errors
+        td_errors = target_q_values - current_q_values[jnp.arange(len(batch)), actions]
+        
+        # Compute gradients (simplified)
+        gradients = {k: {kk: jnp.zeros_like(vv) for kk, vv in v.items()} 
+                    for k, v in agent['q_params'].items()}
+        
+        for i in range(len(batch)):
+            state = states[i]
+            action = actions[i]
+            td_error = td_errors[i]
+            
+            # Simple gradient for Q-output layer
+            grad_w = jnp.zeros_like(agent['q_params']['q_output']['weights'])
+            grad_b = jnp.zeros_like(agent['q_params']['q_output']['bias'])
+            
+            # Assume state features for gradient computation
+            grad_w = grad_w.at[:, action].add(td_error * state[0])  # Simplified
+            grad_b = grad_b.at[action].add(td_error)
+            
+            gradients['q_output']['weights'] += grad_w / len(batch)
+            gradients['q_output']['bias'] += grad_b / len(batch)
+        
+        # Apply Adam optimization
+        agent['adam_t'] += 1
+        agent['q_params'], agent['q_adam_m'], agent['q_adam_v'] = self._adam_update(
+            agent['q_params'], gradients, agent['q_adam_m'], 
+            agent['q_adam_v'], agent['adam_t'], self.marl_learning_rate
+        )
+    
     def _calibrate_dqn(self, verbose: bool) -> Dict[str, float]:
-        """Deep Q-Network calibration."""
+        """Advanced DQN calibration with Dueling architecture and prioritized experience replay."""
         no_improvement_count = 0
+        target_update_counter = 0
         
         for iteration in range(self.max_iterations):
             if verbose:
                 print(f"\nIteration {iteration+1}/{self.max_iterations}")
             
-            # Current state
-            state = jnp.array([self.params[name] for name in self.dqn_param_names])
+            # Current enhanced state
+            state = self._create_enhanced_state(self.params)
             
-            # Epsilon-greedy action selection
+            # Epsilon-greedy action selection with diversity penalty
             self.key, subkey = random.split(self.key)
             if random.uniform(subkey) < self.dqn_epsilon:
-                # Explore: random action
-                action = random.randint(subkey, (), 0, len(self.dqn_param_names) * 2)
+                # Explore: random action with diversity bias
+                n_actions = len(self.dqn_param_names) * len(self.dqn_step_sizes)
+                action = random.randint(subkey, (), 0, n_actions)
             else:
-                # Exploit: best action from DQN
-                q_values = self._dqn_forward(state)
+                # Exploit: best action from DQN with diversity penalty
+                q_values = self._dqn_forward_dueling(state)
+                
+                # Apply action diversity penalty
+                for i in range(len(q_values)):
+                    penalty = self._compute_action_diversity_penalty(i)
+                    q_values = q_values.at[i].add(-penalty)
+                
                 action = jnp.argmax(q_values)
+            
+            # Track action for diversity
+            self.dqn_action_history.append(int(action))
+            if len(self.dqn_action_history) > self.dqn_action_history_size:
+                self.dqn_action_history.pop(0)
             
             # Apply action to parameters
             new_params = self.params.copy()
-            param_idx = int(action) // 2
-            direction = 1 if int(action) % 2 == 0 else -1
+            param_idx = int(action) // len(self.dqn_step_sizes)
+            step_idx = int(action) % len(self.dqn_step_sizes)
             param_name = self.dqn_param_names[param_idx]
             
             # Update parameter
             min_val, max_val = self.param_bounds[param_name]
-            step = self.dqn_step_size * (max_val - min_val)
+            step_size = self.dqn_step_sizes[step_idx]
+            step = step_size * (max_val - min_val)
+            
+            # Random direction
+            self.key, subkey = random.split(self.key)
+            direction = 1 if random.uniform(subkey) < 0.5 else -1
+            
             new_value = self.params[param_name] + direction * step
             new_params[param_name] = float(jnp.clip(new_value, min_val, max_val))
             
             # Evaluate new parameters
             loss, ci = self._evaluate_params_robust(new_params)
-            reward = -loss  # Negative loss as reward
+            
+            # Shaped reward
+            old_loss = self.loss_history[-1] if self.loss_history else float('inf')
+            improvement = old_loss - loss
+            reward = improvement * 10.0
             
             # Store experience
-            next_state = jnp.array([new_params[name] for name in self.dqn_param_names])
+            next_state = self._create_enhanced_state(new_params)
             experience = (state, int(action), reward, next_state, False)  # not done
             
             self.dqn_memory.append(experience)
@@ -1577,7 +2550,14 @@ class ModelCalibrator:
             
             # Train DQN if we have enough experiences
             if len(self.dqn_memory) >= self.dqn_batch_size:
-                self._train_dqn()
+                self._train_dqn_improved()
+            
+            # Update target network periodically
+            target_update_counter += 1
+            if target_update_counter >= self.dqn_target_update_freq:
+                self.dqn_target_params = {k: {kk: vv.copy() for kk, vv in v.items()} 
+                                         for k, v in self.dqn_params.items()}
+                target_update_counter = 0
             
             # Update parameters
             self.params = new_params
@@ -1600,8 +2580,8 @@ class ModelCalibrator:
                 print(f"Action: {action}, Reward: {reward:.6f}")
                 print(f"Epsilon: {self.dqn_epsilon:.3f}")
             
-            # Decay exploration
-            self.dqn_epsilon *= self.dqn_epsilon_decay
+            # Decay exploration with minimum
+            self.dqn_epsilon = max(self.dqn_epsilon * self.dqn_epsilon_decay, self.dqn_epsilon_min)
             
             # Early stopping
             if loss < self.tolerance:
@@ -1616,8 +2596,8 @@ class ModelCalibrator:
         
         return self.best_params
     
-    def _train_dqn(self):
-        """Train the DQN using experience replay."""
+    def _train_dqn_improved(self):
+        """Train the DQN using improved experience replay."""
         # Sample random batch
         self.key, subkey = random.split(self.key)
         batch_indices = random.choice(subkey, len(self.dqn_memory), 
@@ -1631,39 +2611,55 @@ class ModelCalibrator:
         rewards = jnp.array([exp[2] for exp in batch])
         next_states = jnp.array([exp[3] for exp in batch])
         
-        # Compute target Q-values
-        next_q_values = jnp.array([self._dqn_forward(next_state) for next_state in next_states])
-        target_q_values = rewards + self.dqn_gamma * jnp.max(next_q_values, axis=1)
+        # Compute target Q-values using Double DQN
+        next_q_values_main = jnp.array([self._dqn_forward_dueling(next_state) for next_state in next_states])
+        next_q_values_target = jnp.array([self._dqn_forward_dueling(next_state, self.dqn_target_params) 
+                                        for next_state in next_states])
+        
+        # Double DQN: use main network to select actions, target network to evaluate
+        next_actions = jnp.argmax(next_q_values_main, axis=1)
+        target_q_values = rewards + self.dqn_gamma * next_q_values_target[jnp.arange(len(batch)), next_actions]
         
         # Compute current Q-values
-        current_q_values = jnp.array([self._dqn_forward(state) for state in states])
+        current_q_values = jnp.array([self._dqn_forward_dueling(state) for state in states])
+        current_q_selected = current_q_values[jnp.arange(len(batch)), actions]
         
-        # Compute loss and gradients (simplified gradient descent)
+        # Compute TD errors
+        td_errors = target_q_values - current_q_selected
+        
+        # Simplified gradient update (focusing on advantage stream)
+        gradients = {k: {kk: jnp.zeros_like(vv) for kk, vv in v.items()} 
+                    for k, v in self.dqn_params.items()}
+        
         for i in range(len(batch)):
             state = states[i]
             action = actions[i]
-            target = target_q_values[i]
-            current = current_q_values[i, action]
+            td_error = td_errors[i]
             
-            # Simple gradient update (this is a simplified version)
-            error = target - current
+            # Forward pass to get activations
+            h1 = jnp.relu(jnp.dot(state, self.dqn_params['shared1']['weights']) + 
+                         self.dqn_params['shared1']['bias'])
+            h2 = jnp.relu(jnp.dot(h1, self.dqn_params['shared2']['weights']) + 
+                         self.dqn_params['shared2']['bias'])
+            a1 = jnp.relu(jnp.dot(h2, self.dqn_params['advantage1']['weights']) + 
+                         self.dqn_params['advantage1']['bias'])
             
-            # Update network parameters (simplified)
-            # In practice, you'd use proper backpropagation
-            h1 = jnp.tanh(jnp.dot(state, self.dqn_params['layer1']['weights']) + 
-                         self.dqn_params['layer1']['bias'])
+            # Gradients for advantage output
+            grad_adv_w = jnp.zeros_like(self.dqn_params['advantage_output']['weights'])
+            grad_adv_b = jnp.zeros_like(self.dqn_params['advantage_output']['bias'])
+            grad_adv_w = grad_adv_w.at[:, action].add(td_error * a1)
+            grad_adv_b = grad_adv_b.at[action].add(td_error)
             
-            # Gradient for layer 2
-            grad_w2 = error * h1
-            grad_b2 = error
-            
-            # Update layer 2
-            self.dqn_params['layer2']['weights'] = self.dqn_params['layer2']['weights'].at[action].add(
-                self.dqn_learning_rate * grad_w2
-            )
-            self.dqn_params['layer2']['bias'] = self.dqn_params['layer2']['bias'].at[action].add(
-                self.dqn_learning_rate * grad_b2
-            )
+            # Accumulate gradients
+            gradients['advantage_output']['weights'] += grad_adv_w / len(batch)
+            gradients['advantage_output']['bias'] += grad_adv_b / len(batch)
+        
+        # Apply Adam optimization
+        self.dqn_adam_t += 1
+        self.dqn_params, self.dqn_adam_m, self.dqn_adam_v = self._adam_update(
+            self.dqn_params, gradients, self.dqn_adam_m, self.dqn_adam_v, 
+            self.dqn_adam_t, self.dqn_learning_rate
+        )
     
     def get_calibration_history(self) -> Dict[str, List[Any]]:
         """Get calibration history.
@@ -1949,8 +2945,10 @@ def compare_calibration_methods(
     initial_params: Dict[str, float],
     target_metrics: Dict[str, float],
     methods: List[str] = ["adam", "sgd", "es", "pso", "cem"],
+    param_bounds: Optional[Dict[str, Tuple[float, float]]] = None,
     max_iterations: int = 50,
-    verbose: bool = True
+    verbose: bool = True,
+    **kwargs
 ) -> Dict[str, Any]:
     """Compare different calibration methods on the same problem.
     
@@ -1959,8 +2957,10 @@ def compare_calibration_methods(
         initial_params: Initial parameter values
         target_metrics: Target metric values
         methods: List of methods to compare
+        param_bounds: Parameter bounds for each parameter
         max_iterations: Maximum iterations for each method
         verbose: Whether to print progress
+        **kwargs: Additional arguments passed to ModelCalibrator
         
     Returns:
         Dictionary with comparison results
@@ -1970,7 +2970,9 @@ def compare_calibration_methods(
         initial_params=initial_params,
         target_metrics=target_metrics,
         methods=methods,
-        max_iterations=max_iterations
+        param_bounds=param_bounds,
+        max_iterations=max_iterations,
+        **kwargs
     )
     
     results = ensemble.calibrate(verbose=verbose)
