@@ -1,0 +1,31 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite it as below."
+type: software
+title: "JaxABM: JAX-Accelerated Agent-Based Modeling Framework"
+version: "0.1.0"
+date-released: 2025-06-08
+url: "https://github.com/a11to1n3/JaxABM"
+repository-code: "https://github.com/a11to1n3/JaxABM"
+abstract: "High-performance agent-based modeling framework built on JAX, featuring GPU acceleration, reinforcement learning calibration methods, and comprehensive parameter optimization tools. JaxABM provides 10-100x speedup over traditional ABM frameworks while maintaining an intuitive AgentPy-like interface."
+authors:
+  - family-names: "Pham"
+    given-names: "Anh-Duy"
+    orcid: "https://orcid.org/0000-0000-0000-0000"  # Please update with actual ORCID
+  - family-names: "D'Orazio"
+    given-names: "Paola"
+    orcid: "https://orcid.org/0000-0000-0000-0000"  # Please update with actual ORCID
+keywords:
+  - "agent-based modeling"
+  - "JAX"
+  - "GPU acceleration"
+  - "reinforcement learning"
+  - "parameter calibration"
+  - "sensitivity analysis"
+  - "high-performance computing"
+  - "social simulation"
+  - "economic modeling"
+license: MIT
+contact:
+  - family-names: "Pham"
+    given-names: "Anh-Duy"
+    email: "your.email@example.com"  # Please update with actual email 

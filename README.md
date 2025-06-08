@@ -352,6 +352,50 @@ JaxABM provides significant performance improvements:
 - **Parallel agent updates** through vectorization
 - **JIT compilation** for optimal performance
 
+## Citation
+
+If you use JaxABM in your research, please cite:
+
+### BibTeX
+
+```bibtex
+@software{pham2025jaxabm,
+  title={JaxABM: JAX-Accelerated Agent-Based Modeling Framework},
+  author={Pham, Anh-Duy and D'Orazio, Paola},
+  year={2025},
+  month={June},
+  version={0.1.0},
+  url={https://github.com/a11to1n3/JaxABM},
+  note={High-performance agent-based modeling framework with GPU acceleration and reinforcement learning calibration}
+}
+```
+
+### APA Style
+
+Pham, A.-D., & D'Orazio, P. (2025). *JaxABM: JAX-Accelerated Agent-Based Modeling Framework* (Version 0.1.0) [Computer software]. https://github.com/a11to1n3/JaxABM
+
+### IEEE Style
+
+A.-D. Pham and P. D'Orazio, "JaxABM: JAX-Accelerated Agent-Based Modeling Framework," Version 0.1.0, June 2025. [Online]. Available: https://github.com/a11to1n3/JaxABM
+
+### Key Features to Cite
+
+When citing JaxABM, you may want to highlight these innovations:
+
+- **GPU-accelerated agent-based modeling** with JAX backend
+- **Advanced reinforcement learning calibration methods** (Actor-Critic, Policy Gradient, Q-Learning, DQN)
+- **High-performance vectorized simulations** with 10-100x speedup over traditional ABM frameworks
+- **Differentiable agent-based models** enabling gradient-based optimization
+- **Comprehensive parameter optimization toolkit** with multiple calibration algorithms
+
+### Related Publications
+
+If you use specific features, consider citing the underlying methodologies:
+
+- For **reinforcement learning calibration**: Reference the specific RL algorithms used (Actor-Critic, Policy Gradient, etc.)
+- For **sensitivity analysis**: Sobol indices methodology
+- For **JAX backend**: The JAX library for high-performance machine learning research
+
 ## Requirements
 
 - Python 3.8+
