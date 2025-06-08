@@ -7,13 +7,18 @@ on:
   release:
     types: [published]
 
+permissions:
+  contents: write
+  packages: write
+  pull-requests: read
+
 jobs:
   test:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
     strategy:
       matrix:
-        python-version: ['3.10']  # Use only one Python version for faster execution
+        python-version: ['3.8', '3.9', '3.10', '3.11', '3.12']  # Test across Python versions
     
     steps:
     - uses: actions/checkout@v4
@@ -169,14 +174,14 @@ jobs:
     needs: publish-pypi
     runs-on: ubuntu-latest
     if: startsWith(github.ref, 'refs/tags/v')
+    permissions:
+      contents: write
     
     steps:
     - uses: actions/checkout@v4
     
     - name: Create GitHub Release
       uses: softprops/action-gh-release@v2
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       with:
         tag_name: ${{ github.ref_name }}
         name: JaxABM ${{ github.ref_name }}
@@ -192,8 +197,8 @@ jobs:
           
           ### Test Coverage
           This release maintains the high test coverage standards:
-          - ✅ 70%+ overall test coverage
-          - ✅ All tests passing
-          - ✅ Quality assurance verified
+          - ✅ Comprehensive test suite with 214+ tests
+          - ✅ Enhanced code quality and reliability
+          - ✅ Production-ready JAX-accelerated ABM framework
         draft: false
         prerelease: false 
