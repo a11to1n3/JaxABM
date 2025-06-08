@@ -31,23 +31,57 @@ jobs:
         pip install fugue
         pip install -e .
     
-    - name: Run tests
+    - name: Debug environment
       run: |
-        python -m pytest tests/ -v --cov=jaxabm --cov-report=term-missing
+        echo "Python version:"
+        python --version
+        echo "Installed packages:"
+        pip list
+        echo "Test directory structure:"
+        find tests/ -name "*.py" | head -20
+        echo "JaxABM package structure:"
+        find jaxabm/ -name "*.py" | head -10
+        
+    - name: Test imports
+      run: |
+        echo "Testing basic imports:"
+        python -c "import jaxabm; print('JaxABM imported successfully')"
+        python -c "import jax; print('JAX imported successfully')"
+        python -c "import numpy; print('NumPy imported successfully')"
+        echo "Testing pytest discovery:"
+        python -m pytest --collect-only tests/ | grep "test session starts" -A 10
+        
+    - name: Run tests with coverage
+      run: |
+        python -m pytest tests/ -v --cov=jaxabm --cov-report=term --cov-report=xml --tb=short --maxfail=5 > test_output.log 2>&1
+        cat test_output.log
         
     - name: Verify coverage threshold
       run: |
         python -c "
-        import subprocess
-        result = subprocess.run(['python', '-m', 'pytest', '--cov=jaxabm', '--cov-report=term', 'tests/'], 
-                              capture_output=True, text=True)
-        coverage_line = [line for line in result.stdout.split('\n') if 'TOTAL' in line]
-        if coverage_line:
-            coverage = int(coverage_line[0].split()[-1].replace('%', ''))
-            print(f'Current coverage: {coverage}%')
-            if coverage < 70:
-                raise Exception(f'Coverage {coverage}% is below required 70%')
-            print(f'✅ Coverage requirement met: {coverage}% >= 70%')
+        with open('test_output.log', 'r') as f:
+            output = f.read()
+        
+        coverage_lines = [line for line in output.split('\n') if 'TOTAL' in line and '%' in line]
+        if coverage_lines:
+            coverage_line = coverage_lines[-1]  # Get the last TOTAL line
+            coverage_str = coverage_line.split()[-1].replace('%', '')
+            try:
+                coverage = int(coverage_str)
+                print(f'Current coverage: {coverage}%')
+                if coverage < 70:
+                    raise Exception(f'Coverage {coverage}% is below required 70%')
+                print(f'✅ Coverage requirement met: {coverage}% >= 70%')
+            except ValueError:
+                print(f'Could not parse coverage from: {coverage_line}')
+                print('Full output:')
+                print(output)
+                raise Exception('Failed to parse coverage percentage')
+        else:
+            print('No coverage line found in output')
+            print('Full output:')
+            print(output)
+            raise Exception('No coverage information found')
         "
 
   build:
