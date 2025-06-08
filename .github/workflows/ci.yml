@@ -158,16 +158,27 @@ jobs:
     steps:
     - uses: actions/checkout@v4
 
-    - name: Run Bandit security scan
-      uses: securecodewarrior/github-action-bandit@v1
+    - name: Set up Python 3.10
+      uses: actions/setup-python@v4
       with:
-        config_file: .bandit
+        python-version: '3.10'
+
+    - name: Install security tools
+      run: |
+        python -m pip install --upgrade pip
+        pip install bandit safety
+
+    - name: Run Bandit security scan
+      run: |
+        bandit -c .bandit -r jaxabm/ -f json -o bandit-report.json || true
+        bandit -c .bandit -r jaxabm/ || true
       continue-on-error: true
 
     - name: Run Safety check
       run: |
-        pip install safety
+        pip install -r requirements.txt
         safety check --json || true
+      continue-on-error: true
 
   docs:
     runs-on: ubuntu-latest

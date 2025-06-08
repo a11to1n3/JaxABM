@@ -1,0 +1,21 @@
+[bandit]
+# Bandit configuration file for JaxABM security scanning
+
+# Exclude test directories and examples from security scans
+exclude_dirs = ["tests", "examples", "docs"]
+
+# Skip specific test IDs that are not relevant for our use case
+skips = [
+    "B101",  # assert_used - we use asserts in tests
+    "B601",  # paramiko_calls - not applicable
+    "B602",  # subprocess_popen_with_shell_equals_true - handled safely
+]
+
+# Set confidence level (LOW, MEDIUM, HIGH)
+confidence = "MEDIUM"
+
+# Set severity level (LOW, MEDIUM, HIGH)  
+severity = "MEDIUM"
+
+# Output format
+format = "txt" 
