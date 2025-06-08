@@ -13,7 +13,7 @@ sys.path.insert(0, os.path.abspath('..'))
 project = 'JaxABM'
 copyright = '2025, Anh-Duy Pham and Paola D\'Orazio'
 author = 'Anh-Duy Pham and Paola D\'Orazio'
-release = '0.1.0'
+release = '0.1.5'
 
 # -- General configuration ---------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#general-configuration
