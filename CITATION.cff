@@ -10,10 +10,10 @@ abstract: "High-performance agent-based modeling framework built on JAX, featuri
 authors:
   - family-names: "Pham"
     given-names: "Anh-Duy"
-    orcid: "https://orcid.org/0000-0000-0000-0000"  # Please update with actual ORCID
+    orcid: "https://orcid.org/0000-0003-3832-9453"  # Please update with actual ORCID
   - family-names: "D'Orazio"
     given-names: "Paola"
-    orcid: "https://orcid.org/0000-0000-0000-0000"  # Please update with actual ORCID
+    orcid: "https://orcid.org/0000-0002-3660-2877"  # Please update with actual ORCID
 keywords:
   - "agent-based modeling"
   - "JAX"
@@ -28,4 +28,4 @@ license: MIT
 contact:
   - family-names: "Pham"
     given-names: "Anh-Duy"
-    email: "your.email@example.com"  # Please update with actual email 
+    email: "duyanhpham@outlook.com"  # Please update with actual email 

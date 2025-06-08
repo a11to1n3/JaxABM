@@ -7,7 +7,7 @@ setup(
     name="jaxabm",
     version="0.1.1",
     author="Anh-Duy Pham, Paola D'Orazio",
-    author_email="duypham@stanford.edu",
+    author_email="duyanhpham@outlook.com",
     description="A JAX-accelerated agent-based modeling framework",
     long_description=long_description,
     long_description_content_type="text/markdown",
