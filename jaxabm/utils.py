@@ -5,7 +5,10 @@ This module provides helper functions for common tasks in agent-based modeling,
 such as data conversion, visualization, and validation.
 """
 
-from typing import Any, Dict, List, Optional, Tuple, Union, Callable
+from typing import Any, Dict, List, Optional, Tuple, Union, Callable, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from jaxabm.model import Model
 import jax
 import jax.numpy as jnp
 import numpy as np
