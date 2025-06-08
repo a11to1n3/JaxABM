@@ -24,7 +24,7 @@ The legacy version (non-JAX) is available directly from the package root.
 The JAX-accelerated version is available when JAX is installed.
 """
 
-__version__ = "0.1.0"
+__version__ = "0.1.1"
 
 # Check for JAX support
 import importlib.util

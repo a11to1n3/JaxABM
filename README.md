@@ -364,7 +364,7 @@ If you use JaxABM in your research, please cite:
   author={Pham, Anh-Duy and D'Orazio, Paola},
   year={2025},
   month={June},
-  version={0.1.0},
+  version={0.1.1},
   url={https://github.com/a11to1n3/JaxABM},
   note={High-performance agent-based modeling framework with GPU acceleration and reinforcement learning calibration}
 }
@@ -372,11 +372,11 @@ If you use JaxABM in your research, please cite:
 
 ### APA Style
 
-Pham, A.-D., & D'Orazio, P. (2025). *JaxABM: JAX-Accelerated Agent-Based Modeling Framework* (Version 0.1.0) [Computer software]. https://github.com/a11to1n3/JaxABM
+Pham, A.-D., & D'Orazio, P. (2025). *JaxABM: JAX-Accelerated Agent-Based Modeling Framework* (Version 0.1.1) [Computer software]. https://github.com/a11to1n3/JaxABM
 
 ### IEEE Style
 
-A.-D. Pham and P. D'Orazio, "JaxABM: JAX-Accelerated Agent-Based Modeling Framework," Version 0.1.0, June 2025. [Online]. Available: https://github.com/a11to1n3/JaxABM
+A.-D. Pham and P. D'Orazio, "JaxABM: JAX-Accelerated Agent-Based Modeling Framework," Version 0.1.1, June 2025. [Online]. Available: https://github.com/a11to1n3/JaxABM
 
 ### Key Features to Cite
 

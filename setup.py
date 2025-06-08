@@ -5,7 +5,7 @@ with open("README.md", "r", encoding="utf-8") as fh:
 
 setup(
     name="jaxabm",
-    version="0.1.0",
+    version="0.1.1",
     author="Anh-Duy Pham, Paola D'Orazio",
     author_email="duypham@stanford.edu",
     description="A JAX-accelerated agent-based modeling framework",

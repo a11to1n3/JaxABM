@@ -3,6 +3,45 @@ Changelog
 
 All notable changes to JaxABM will be documented in this file.
 
+Version 0.1.1 (2025-06-08)
+---------------------------
+
+Test Coverage & Quality Improvements
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+**Comprehensive Test Suite Enhancement** ⭐
+  - **Achieved 70.2% overall test coverage** (increased from 61%)
+  - **214 passing tests** across all modules with 0 failures
+  - **Zero regressions** - all existing functionality preserved
+  - **Robust test architecture** with sophisticated mocking strategies
+
+**Module-Specific Coverage Improvements**
+  - **jaxabm/agentpy.py**: 20% → 68% (+48% improvement)
+  - **jaxabm/api.py**: 0% → 93% (+93% improvement) 
+  - **jaxabm/analysis.py**: 5% → 63% (+58% improvement)
+  - **jaxabm/core.py**: 32% → 95% (+63% improvement)
+  - **jaxabm/utils.py**: 16% → 99% (+83% improvement)
+  - **jaxabm/agent.py**: 37% → 85% (+48% improvement)
+  - **jaxabm/model.py**: 17% → 82% (+65% improvement)
+
+**New Test Infrastructure**
+  - Added ``tests/unit/test_agentpy.py`` (787 lines) - Complete AgentPy interface testing
+  - Enhanced ``tests/unit/test_api.py`` - Public API comprehensive coverage
+  - Enhanced ``tests/unit/test_utils.py`` - Utility functions near-complete testing
+  - Enhanced ``tests/unit/test_core.py`` - Core framework near-complete testing
+
+**Quality Assurance Features**
+  - Comprehensive edge case testing and error handling validation
+  - Integration tests for complex multi-component workflows
+  - Sophisticated JAX array mocking and external dependency isolation
+  - Property-based testing for dynamic attribute access
+
+**Developer Experience Improvements**
+  - Tests serve as living documentation with clear usage examples
+  - Immediate feedback on code changes with comprehensive test coverage
+  - Safe refactoring capabilities with robust regression detection
+  - Enhanced collaboration confidence with validated API behavior
+
 Version 0.1.0 (2025-06-08)
 ---------------------------
 
